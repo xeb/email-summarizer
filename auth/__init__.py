@@ -1,0 +1,1 @@
+# Authentication module for Gmail OAuth2 handling

@@ -1,0 +1,1 @@
+# Summarization module for AI-powered email content summarization

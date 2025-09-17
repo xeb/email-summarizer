@@ -1,0 +1,22 @@
+{
+  "enabled": true,
+  "name": "README Updater",
+  "description": "Automatically updates the README.md file when project structure or key files change",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "main.py",
+      "requirements.txt",
+      "auth/__init__.py",
+      "config/__init__.py",
+      "email/__init__.py",
+      "storage/__init__.py",
+      "summarization/__init__.py"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Please update the README.md file to reflect the current project structure and functionality. Review the changed files and ensure the README accurately describes the project's purpose, installation instructions, usage, and module descriptions based on the current codebase."
+  }
+}

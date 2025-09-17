@@ -1,0 +1,1 @@
+# Configuration module for application settings and environment management

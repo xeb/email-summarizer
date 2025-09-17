@@ -1,0 +1,1 @@
+# Storage module for YAML file management and data persistence
