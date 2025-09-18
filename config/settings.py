@@ -39,6 +39,12 @@ class Config:
     max_tokens: int = 500
     temperature: float = 0.3
     
+    # Search Configuration Settings
+    search_configs_file: str = "search_configs.json"
+    default_search_query: str = "is:unread is:important"
+    enable_search_validation: bool = True
+    max_search_results: int = 100
+    
     def __post_init__(self):
         """Load environment variables and validate configuration after initialization."""
         self._load_from_environment()
@@ -56,13 +62,26 @@ class Config:
         self.claude_model = os.getenv("CLAUDE_MODEL", self.claude_model)
         self.output_directory = os.getenv("OUTPUT_DIRECTORY", self.output_directory)
         
+        # Load search configuration settings from environment
+        self.search_configs_file = os.getenv("SEARCH_CONFIGS_FILE", self.search_configs_file)
+        self.default_search_query = os.getenv("DEFAULT_SEARCH_QUERY", self.default_search_query)
+        
         # Load numeric settings with validation
         try:
             self.max_emails_per_run = int(os.getenv("MAX_EMAILS_PER_RUN", str(self.max_emails_per_run)))
             self.max_tokens = int(os.getenv("MAX_TOKENS", str(self.max_tokens)))
             self.temperature = float(os.getenv("TEMPERATURE", str(self.temperature)))
+            self.max_search_results = int(os.getenv("MAX_SEARCH_RESULTS", str(self.max_search_results)))
         except ValueError as e:
             logging.warning(f"Invalid numeric environment variable: {e}")
+        
+        # Load boolean settings with validation
+        try:
+            enable_search_validation_env = os.getenv("ENABLE_SEARCH_VALIDATION")
+            if enable_search_validation_env is not None:
+                self.enable_search_validation = enable_search_validation_env.lower() in ("true", "1", "yes", "on")
+        except Exception as e:
+            logging.warning(f"Invalid boolean environment variable for ENABLE_SEARCH_VALIDATION: {e}")
     
     def _validate_configuration(self):
         """Validate configuration settings and raise errors for invalid values."""
@@ -87,6 +106,9 @@ class Config:
         if not 0.0 <= self.temperature <= 2.0:
             raise ValueError("temperature must be between 0.0 and 2.0")
         
+        if self.max_search_results <= 0:
+            raise ValueError("max_search_results must be greater than 0")
+        
         # Validate file paths
         if not self.credentials_file:
             raise ValueError("credentials_file cannot be empty")
@@ -96,6 +118,21 @@ class Config:
         
         if not self.output_directory:
             raise ValueError("output_directory cannot be empty")
+        
+        if not self.search_configs_file:
+            raise ValueError("search_configs_file cannot be empty")
+        
+        # Validate search settings
+        if not self.default_search_query:
+            raise ValueError("default_search_query cannot be empty")
+        
+        # Basic validation of default search query format
+        if not isinstance(self.default_search_query, str):
+            raise ValueError("default_search_query must be a string")
+        
+        # Validate that enable_search_validation is boolean
+        if not isinstance(self.enable_search_validation, bool):
+            raise ValueError("enable_search_validation must be a boolean value")
     
     def get_api_key(self) -> str:
         """Get the appropriate API key based on the configured provider."""

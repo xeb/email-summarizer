@@ -7,7 +7,8 @@ specifically filtering for important unread emails and extracting their content.
 
 import logging
 import base64
-from typing import List, Dict, Optional, Any
+import re
+from typing import List, Dict, Optional, Any, Tuple
 from googleapiclient.discovery import Resource
 from googleapiclient.errors import HttpError
 
@@ -24,8 +25,28 @@ class EmailFetchError(NonRetryableError):
         super().__init__(message, category)
 
 
+class QueryValidationError(NonRetryableError):
+    """Custom exception for Gmail query validation errors."""
+    def __init__(self, message: str, suggestions: List[str] = None):
+        super().__init__(message, ErrorCategory.VALIDATION)
+        self.suggestions = suggestions or []
+
+
 class EmailFetcher:
     """Handles fetching emails from Gmail API."""
+    
+    # Supported Gmail search operators for validation
+    SUPPORTED_OPERATORS = [
+        'from:', 'to:', 'subject:', 'has:', 'is:', 'in:',
+        'after:', 'before:', 'older_than:', 'newer_than:',
+        'size:', 'larger:', 'smaller:', 'filename:', 'label:',
+        'category:', 'deliveredto:', 'cc:', 'bcc:', 'rfc822msgid:'
+    ]
+    
+    # Common Gmail search values for validation
+    VALID_IS_VALUES = ['unread', 'read', 'important', 'starred', 'snoozed', 'sent', 'draft', 'chat']
+    VALID_HAS_VALUES = ['attachment', 'nouserlabels', 'userlabels', 'yellow-star', 'blue-info', 'red-bang', 'orange-guillemet', 'red-star', 'purple-star', 'green-star']
+    VALID_IN_VALUES = ['inbox', 'trash', 'spam', 'unread', 'starred', 'sent', 'draft', 'important', 'chats', 'all', 'anywhere']
     
     def __init__(self, gmail_service: Resource):
         """
@@ -37,43 +58,139 @@ class EmailFetcher:
         self.service = gmail_service
         self.logger = logging.getLogger(__name__)
     
+    def validate_gmail_query(self, query: str) -> Tuple[bool, str]:
+        """
+        Validate Gmail search query syntax and provide helpful error messages.
+        
+        This method implements requirement 5.1: validate query syntax and display
+        helpful error messages for invalid queries.
+        
+        Args:
+            query: Gmail search query string to validate
+            
+        Returns:
+            Tuple of (is_valid, error_message_or_empty_string)
+        """
+        if not query or not query.strip():
+            return False, "Query cannot be empty"
+        
+        query = query.strip()
+        suggestions = []
+        
+        # Check for basic syntax issues
+        if query.count('"') % 2 != 0:
+            return False, "Unmatched quotes in query. Make sure all quoted phrases are properly closed."
+        
+        # Split query into tokens for analysis
+        tokens = re.findall(r'[^\s"]+|"[^"]*"', query)
+        
+        for token in tokens:
+            # Skip quoted phrases and simple words
+            if token.startswith('"') and token.endswith('"'):
+                continue
+            if ':' not in token:
+                continue
+                
+            # Check operator syntax
+            if ':' in token:
+                operator, value = token.split(':', 1)
+                operator_with_colon = operator + ':'
+                
+                # Check if operator is supported
+                if operator_with_colon not in self.SUPPORTED_OPERATORS:
+                    # Find similar operators for suggestions
+                    similar_ops = [op for op in self.SUPPORTED_OPERATORS if op.startswith(operator[:2])]
+                    suggestion_text = f" Did you mean: {', '.join(similar_ops)}?" if similar_ops else ""
+                    return False, f"Unsupported search operator '{operator_with_colon}'.{suggestion_text}"
+                
+                # Validate specific operator values
+                if operator == 'is' and value not in self.VALID_IS_VALUES:
+                    return False, f"Invalid value '{value}' for 'is:' operator. Valid values: {', '.join(self.VALID_IS_VALUES)}"
+                
+                if operator == 'has' and value not in self.VALID_HAS_VALUES:
+                    return False, f"Invalid value '{value}' for 'has:' operator. Valid values: {', '.join(self.VALID_HAS_VALUES)}"
+                
+                if operator == 'in' and value not in self.VALID_IN_VALUES:
+                    return False, f"Invalid value '{value}' for 'in:' operator. Valid values: {', '.join(self.VALID_IN_VALUES)}"
+                
+                # Validate date formats for date operators
+                if operator in ['after', 'before']:
+                    if not self._validate_date_format(value):
+                        return False, f"Invalid date format '{value}' for '{operator}:' operator. Use YYYY/MM/DD or YYYY-MM-DD format."
+                
+                # Validate relative date formats
+                if operator in ['newer_than', 'older_than']:
+                    if not self._validate_relative_date_format(value):
+                        return False, f"Invalid relative date format '{value}' for '{operator}:' operator. Use format like '7d', '2w', '1m', '1y'."
+                
+                # Validate size formats
+                if operator in ['larger', 'smaller', 'size']:
+                    if not self._validate_size_format(value):
+                        return False, f"Invalid size format '{value}' for '{operator}:' operator. Use format like '10M', '5K', '1G'."
+        
+        return True, ""
+    
+    def _validate_date_format(self, date_str: str) -> bool:
+        """Validate date format for Gmail date operators."""
+        # Gmail accepts YYYY/MM/DD and YYYY-MM-DD formats
+        # More strict validation to prevent invalid dates like 2024-13-01
+        date_patterns = [
+            r'^\d{4}[/-](0?[1-9]|1[0-2])[/-](0?[1-9]|[12]\d|3[01])$',  # YYYY/MM/DD or YYYY-MM-DD with valid months/days
+            r'^\d{4}[/-](0?[1-9]|1[0-2])$',                            # YYYY/MM or YYYY-MM with valid months
+            r'^\d{4}$'                                                  # YYYY
+        ]
+        return any(re.match(pattern, date_str) for pattern in date_patterns)
+    
+    def _validate_relative_date_format(self, date_str: str) -> bool:
+        """Validate relative date format for Gmail relative date operators."""
+        # Gmail accepts formats like 7d, 2w, 1m, 1y
+        return bool(re.match(r'^\d+[dwmy]$', date_str))
+    
+    def _validate_size_format(self, size_str: str) -> bool:
+        """Validate size format for Gmail size operators."""
+        # Gmail accepts formats like 10M, 5K, 1G
+        return bool(re.match(r'^\d+[KMG]?$', size_str, re.IGNORECASE))
+
     @retry_with_backoff(
         config=RetryConfig(max_attempts=3, base_delay=1.0, max_delay=30.0),
         retryable_exceptions=(RetryableError,),
-        non_retryable_exceptions=(NonRetryableError, EmailFetchError)
+        non_retryable_exceptions=(NonRetryableError, EmailFetchError, QueryValidationError)
     )
-    def fetch_important_unread_emails(self, max_results: int = 50) -> List[Dict[str, Any]]:
+    def fetch_emails_with_query(self, query: str, max_results: int = 50) -> List[Dict[str, Any]]:
         """
-        Fetch important unread emails from Gmail with comprehensive error handling.
+        Fetch emails from Gmail using a custom search query with comprehensive error handling.
         
-        This method implements requirement 2.1: filter for messages that are 
-        both unread AND marked as important.
+        This method implements requirements 1.1, 1.3, 3.2, and 5.1: accept custom Gmail
+        search queries, validate them, and fetch matching emails.
         
         Args:
+            query: Gmail search query string (e.g., "from:sender@domain.com is:unread")
             max_results: Maximum number of emails to fetch
             
         Returns:
             List of email dictionaries with full content
             
         Raises:
+            QueryValidationError: If the query syntax is invalid
             EmailFetchError: If fetching emails fails
             RetryableError: If a retryable error occurs (handled by retry decorator)
         """
         try:
-            self.logger.info("Fetching important unread emails...")
+            self.logger.info(f"Fetching emails with custom query: {query}")
             
-            # Gmail API query for important unread emails (requirement 2.1)
-            # query = "is:unread is:important"
-            query = "is:important from:email@renweb.com"
+            # Validate query syntax before making API calls (requirement 5.1)
+            is_valid, error_message = self.validate_gmail_query(query)
+            if not is_valid:
+                raise QueryValidationError(f"Invalid Gmail search query: {error_message}")
             
             # Get list of message IDs with pagination handling
             message_ids = self._get_message_ids(query, max_results)
             
             if not message_ids:
-                self.logger.info("No important unread emails found")
+                self.logger.info(f"No emails found for query: {query}")
                 return []
             
-            self.logger.info(f"Found {len(message_ids)} important unread emails")
+            self.logger.info(f"Found {len(message_ids)} emails matching query: {query}")
             
             # Fetch full content for each email
             emails = []
@@ -98,21 +215,55 @@ class EmailFetcher:
             if failed_count > 0:
                 self.logger.warning(f"Failed to fetch {failed_count} out of {len(message_ids)} emails")
             
-            self.logger.info(f"Successfully fetched {len(emails)} emails")
+            self.logger.info(f"Successfully fetched {len(emails)} emails with custom query")
             return emails
             
+        except QueryValidationError:
+            # Re-raise validation errors
+            raise
         except HttpError as e:
             # Convert Gmail API error to appropriate error type
             converted_error = handle_gmail_api_error(e)
-            self.logger.error(f"Gmail API error while fetching emails: {converted_error}")
+            self.logger.error(f"Gmail API error while fetching emails with query '{query}': {converted_error}")
             raise converted_error
         except (RetryableError, NonRetryableError):
             # Re-raise our custom exceptions
             raise
         except Exception as e:
-            error_msg = f"Unexpected error while fetching emails: {e}"
+            error_msg = f"Unexpected error while fetching emails with query '{query}': {e}"
             self.logger.error(error_msg)
             raise EmailFetchError(error_msg, ErrorCategory.UNKNOWN)
+
+    @retry_with_backoff(
+        config=RetryConfig(max_attempts=3, base_delay=1.0, max_delay=30.0),
+        retryable_exceptions=(RetryableError,),
+        non_retryable_exceptions=(NonRetryableError, EmailFetchError)
+    )
+    def fetch_important_unread_emails(self, max_results: int = 50) -> List[Dict[str, Any]]:
+        """
+        Fetch important unread emails from Gmail with comprehensive error handling.
+        
+        This method maintains backward compatibility while using the new custom query
+        functionality internally. It implements requirement 2.1: filter for messages 
+        that are both unread AND marked as important.
+        
+        Args:
+            max_results: Maximum number of emails to fetch
+            
+        Returns:
+            List of email dictionaries with full content
+            
+        Raises:
+            EmailFetchError: If fetching emails fails
+            RetryableError: If a retryable error occurs (handled by retry decorator)
+        """
+        # Use the new fetch_emails_with_query method for consistency
+        # Gmail API query for important unread emails (requirement 2.1)
+        # query = "is:unread is:important"
+        query = "is:important is:unread"
+        
+        self.logger.info("Fetching important unread emails using default query...")
+        return self.fetch_emails_with_query(query, max_results)
     
     @retry_with_backoff(
         config=RetryConfig(max_attempts=3, base_delay=1.0, max_delay=20.0),

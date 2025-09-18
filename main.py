@@ -14,6 +14,12 @@ from typing import List, Optional
 
 # Import application modules
 from config.settings import load_config, validate_gmail_credentials, ensure_output_directory
+from config.search_configs import (
+    SearchConfigManager, SearchConfig, SearchConfigError,
+    ConfigurationNotFoundError, InvalidConfigurationError,
+    QueryValidationError, CorruptedConfigFileError
+)
+from config.example_configs import GmailSearchHelp, ExampleConfigurations
 from auth.gmail_auth import GmailAuthError
 from gmail_email.fetcher import create_email_fetcher, EmailFetchError
 from gmail_email.processor import EmailProcessor, EmailData
@@ -42,13 +48,20 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s                    # Run with default settings
-  %(prog)s --max-emails 10    # Process up to 10 emails
-  %(prog)s --verbose          # Enable verbose logging
-  %(prog)s --test-ai          # Test AI service connection only
+  %(prog)s                                    # Run with default settings
+  %(prog)s --max-emails 10                    # Process up to 10 emails
+  %(prog)s --verbose                          # Enable verbose logging
+  %(prog)s --test-ai                          # Test AI service connection only
+  %(prog)s --search-config work-emails        # Use saved search configuration
+  %(prog)s --search-query "from:boss@company.com is:unread"  # Use custom query
+  %(prog)s --list-configs                     # List all saved configurations
+  %(prog)s --save-config urgent "is:important newer_than:1d" "Urgent emails from today"
+  %(prog)s --delete-config old-config         # Delete a saved configuration
+  %(prog)s --update-config work-emails query="from:@company.com is:unread after:2024-01-01"
         """
     )
     
+    # Existing arguments
     parser.add_argument(
         '--max-emails',
         type=int,
@@ -71,6 +84,67 @@ Examples:
         '--output-dir',
         type=str,
         help='Output directory for YAML files (overrides config)'
+    )
+    
+    # New search configuration arguments
+    parser.add_argument(
+        '--search-config', '-sc',
+        type=str,
+        help='Use a saved search configuration by name'
+    )
+    
+    parser.add_argument(
+        '--search-query', '-sq',
+        type=str,
+        help='Use a custom Gmail search query directly'
+    )
+    
+    parser.add_argument(
+        '--list-configs',
+        action='store_true',
+        help='List all saved search configurations and exit'
+    )
+    
+    parser.add_argument(
+        '--save-config',
+        nargs=3,
+        metavar=('NAME', 'QUERY', 'DESCRIPTION'),
+        help='Save a new search configuration with name, query, and description'
+    )
+    
+    parser.add_argument(
+        '--delete-config',
+        type=str,
+        metavar='NAME',
+        help='Delete a saved search configuration by name'
+    )
+    
+    parser.add_argument(
+        '--update-config',
+        nargs='+',
+        metavar=('NAME', 'FIELD=VALUE'),
+        help='Update an existing search configuration. Usage: --update-config NAME query="new query" description="new desc"'
+    )
+    
+    parser.add_argument(
+        '--help-search',
+        nargs='?',
+        const='all',
+        metavar='OPERATOR',
+        help='Show help for Gmail search operators. Use --help-search <operator> for specific help (e.g., --help-search from:)'
+    )
+    
+    parser.add_argument(
+        '--example-configs',
+        action='store_true',
+        help='Show example search configurations for common use cases'
+    )
+    
+    parser.add_argument(
+        '--validate-query',
+        type=str,
+        metavar='QUERY',
+        help='Validate a Gmail search query and show suggestions'
     )
     
     return parser.parse_args()
@@ -96,6 +170,622 @@ def test_ai_connection(config) -> bool:
         return False
 
 
+def list_search_configs(search_manager: SearchConfigManager) -> int:
+    """List all saved search configurations.
+    
+    Args:
+        search_manager: SearchConfigManager instance
+        
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    logger = logging.getLogger(__name__)
+    
+    try:
+        configs = search_manager.list_configs()
+        
+        if not configs:
+            print("No saved search configurations found.")
+            print("Use --save-config to create your first configuration.")
+            return 0
+        
+        print(f"Found {len(configs)} saved search configuration(s):")
+        print("=" * 60)
+        
+        for config in configs:
+            print(f"Name: {config.name}")
+            print(f"Query: {config.query}")
+            print(f"Description: {config.description}")
+            print(f"Created: {config.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            if config.last_used:
+                print(f"Last used: {config.last_used.strftime('%Y-%m-%d %H:%M:%S')}")
+            else:
+                print("Last used: Never")
+            
+            print(f"Usage count: {config.usage_count}")
+            print("-" * 40)
+        
+        # Show usage statistics
+        stats = search_manager.get_config_stats()
+        if stats.get("total_usage", 0) > 0:
+            print(f"Total usage across all configs: {stats['total_usage']}")
+            
+            if stats.get("most_used"):
+                most_used = stats["most_used"]
+                print(f"Most used: {most_used['name']} ({most_used['usage_count']} times)")
+        
+        return 0
+        
+    except Exception as e:
+        logger.error(f"Failed to list configurations: {e}")
+        return 1
+
+
+def save_search_config(search_manager: SearchConfigManager, name: str, query: str, description: str) -> int:
+    """Save a new search configuration.
+    
+    Args:
+        search_manager: SearchConfigManager instance
+        name: Configuration name
+        query: Gmail search query
+        description: Configuration description
+        
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Validate arguments
+        if not name or not name.strip():
+            print("Error: Configuration name cannot be empty")
+            return 1
+        
+        if not query or not query.strip():
+            print("Error: Search query cannot be empty")
+            return 1
+        
+        if not description or not description.strip():
+            print("Error: Description cannot be empty")
+            return 1
+        
+        # Clean up inputs
+        name = name.strip()
+        query = query.strip()
+        description = description.strip()
+        
+        # Create and save configuration
+        config = SearchConfig(
+            name=name,
+            query=query,
+            description=description,
+            created_at=datetime.now()
+        )
+        
+        search_manager.save_config(config)
+        
+        print(f"✓ Successfully saved search configuration '{name}'")
+        print(f"Query: {query}")
+        print(f"Description: {description}")
+        
+        return 0
+        
+    except QueryValidationError as e:
+        logger.warning(f"Query validation failed for config '{name}': {e}")
+        print(f"Error: {e.error_message}")
+        if e.suggestions:
+            print("\nSuggestions:")
+            for suggestion in e.suggestions:
+                print(f"  - {suggestion}")
+        return 1
+    except InvalidConfigurationError as e:
+        logger.warning(f"Invalid configuration '{name}': {e}")
+        print(f"Error: {e}")
+        if e.suggestions:
+            print("\nSuggestions:")
+            for suggestion in e.suggestions:
+                print(f"  - {suggestion}")
+        return 1
+    except CorruptedConfigFileError as e:
+        logger.error(f"Configuration file corrupted while saving '{name}': {e}")
+        print(f"Error: {e}")
+        print("The configuration file has been recreated. Please try again.")
+        return 1
+    except SearchConfigError as e:
+        logger.error(f"Search configuration error saving '{name}': {e}")
+        print(f"Error: {e}")
+        return 1
+    except Exception as e:
+        logger.error(f"Unexpected error saving configuration '{name}': {e}")
+        print(f"Error: {create_user_friendly_message(e, f'saving configuration \'{name}\'')}")
+        return 1
+
+
+def delete_search_config(search_manager: SearchConfigManager, name: str) -> int:
+    """Delete a saved search configuration.
+    
+    Args:
+        search_manager: SearchConfigManager instance
+        name: Configuration name to delete
+        
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Validate argument
+        if not name or not name.strip():
+            print("Error: Configuration name cannot be empty")
+            return 1
+        
+        name = name.strip()
+        
+        # Check if configuration exists
+        config = search_manager.load_config(name)
+        if not config:
+            print(f"Error: Configuration '{name}' not found")
+            
+            # Show available configurations
+            configs = search_manager.list_configs()
+            if configs:
+                print("\nAvailable configurations:")
+                for cfg in configs:
+                    print(f"  - {cfg.name}")
+            else:
+                print("No saved configurations found.")
+            
+            return 1
+        
+        # Show configuration details and ask for confirmation
+        print(f"Configuration to delete:")
+        print(f"  Name: {config.name}")
+        print(f"  Query: {config.query}")
+        print(f"  Description: {config.description}")
+        print(f"  Usage count: {config.usage_count}")
+        
+        # Get confirmation (in a real CLI, this would be interactive)
+        # For now, we'll proceed with deletion since this is a command-line tool
+        print(f"\nDeleting configuration '{name}'...")
+        
+        success = search_manager.delete_config(name)
+        if success:
+            print(f"✓ Successfully deleted configuration '{name}'")
+            return 0
+        else:
+            print(f"Error: Failed to delete configuration '{name}'")
+            return 1
+        
+    except Exception as e:
+        logger.error(f"Failed to delete configuration '{name}': {e}")
+        print(f"Error: Failed to delete configuration - {e}")
+        return 1
+
+
+def update_search_config(search_manager: SearchConfigManager, name: str, query: str = None, description: str = None) -> int:
+    """Update an existing search configuration.
+    
+    Args:
+        search_manager: SearchConfigManager instance
+        name: Configuration name to update
+        query: New search query (optional, keeps existing if None)
+        description: New description (optional, keeps existing if None)
+        
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Validate argument
+        if not name or not name.strip():
+            print("Error: Configuration name cannot be empty")
+            return 1
+        
+        name = name.strip()
+        
+        # Check if configuration exists
+        existing_config = search_manager.load_config(name)
+        if not existing_config:
+            print(f"Error: Configuration '{name}' not found")
+            
+            # Show available configurations
+            configs = search_manager.list_configs()
+            if configs:
+                print("\nAvailable configurations:")
+                for cfg in configs:
+                    print(f"  - {cfg.name}")
+            else:
+                print("No saved configurations found.")
+            
+            return 1
+        
+        # Determine what to update
+        new_query = query.strip() if query and query.strip() else existing_config.query
+        new_description = description.strip() if description and description.strip() else existing_config.description
+        
+        # Validate new query if provided
+        if query and query.strip():
+            is_valid, error_msg = search_manager.validate_query(new_query)
+            if not is_valid:
+                print(f"Error: Invalid search query - {error_msg}")
+                
+                # Provide suggestions if available
+                suggestions = search_manager.validator.suggest_corrections(new_query)
+                if suggestions:
+                    print("\nSuggestions:")
+                    for suggestion in suggestions:
+                        print(f"  - {suggestion}")
+                
+                return 1
+        
+        # Show what will be updated
+        print(f"Updating configuration '{name}':")
+        print(f"  Current query: {existing_config.query}")
+        print(f"  New query: {new_query}")
+        print(f"  Current description: {existing_config.description}")
+        print(f"  New description: {new_description}")
+        
+        # Create updated configuration
+        updated_config = SearchConfig(
+            name=existing_config.name,
+            query=new_query,
+            description=new_description,
+            created_at=existing_config.created_at,
+            last_used=existing_config.last_used,
+            usage_count=existing_config.usage_count
+        )
+        
+        # Update the configuration
+        success = search_manager.update_config(name, updated_config)
+        if success:
+            print(f"✓ Successfully updated configuration '{name}'")
+            return 0
+        else:
+            print(f"Error: Failed to update configuration '{name}'")
+            return 1
+        
+    except ValueError as e:
+        print(f"Error: {e}")
+        return 1
+    except Exception as e:
+        logger.error(f"Failed to update configuration '{name}': {e}")
+        print(f"Error: Failed to update configuration - {e}")
+        return 1
+
+
+def handle_config_commands(args) -> int:
+    """Handle search configuration management commands.
+    
+    Args:
+        args: Parsed command-line arguments
+        
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Load configuration to get search configs file path
+        config = load_config()
+        search_configs_file = getattr(config, 'search_configs_file', 'search_configs.json')
+        
+        try:
+            search_manager = SearchConfigManager(search_configs_file)
+            
+            # Check if search features are available
+            if not search_manager.is_search_feature_available():
+                logger.warning("Search configuration features are not fully available")
+                print("Warning: Search configuration features may not be fully available.")
+                
+                # Get compatibility info for better error messages
+                compat_info = search_manager.get_backward_compatibility_info()
+                if 'error' in compat_info:
+                    print(f"Error: {compat_info['error']}")
+                    print("Search configuration management is unavailable.")
+                    return 1
+                
+                print("Attempting to continue with limited functionality...")
+            
+        except CorruptedConfigFileError as e:
+            logger.error(f"Configuration file is corrupted: {e}")
+            print(f"Error: {e}")
+            print("The configuration file has been recreated. Please try your command again.")
+            return 1
+        except Exception as e:
+            logger.error(f"Failed to initialize search configuration manager: {e}")
+            print(f"Error: Could not access search configurations - {create_user_friendly_message(e, 'initializing search configuration manager')}")
+            print("Search configuration features are unavailable. The application will work with default search behavior.")
+            return 1
+        
+        if args.list_configs:
+            return list_search_configs(search_manager)
+        elif args.save_config:
+            name, query, description = args.save_config
+            return save_search_config(search_manager, name, query, description)
+        elif args.delete_config:
+            return delete_search_config(search_manager, args.delete_config)
+        elif args.update_config:
+            return _handle_update_config(search_manager, args.update_config)
+        
+        return 0
+        
+    except SearchConfigError as e:
+        logger.error(f"Search configuration error: {e}")
+        print(f"Error: {e}")
+        if hasattr(e, 'suggestions') and e.suggestions:
+            print("\nSuggestions:")
+            for suggestion in e.suggestions:
+                print(f"  - {suggestion}")
+        return 1
+    except Exception as e:
+        logger.error(f"Unexpected error in configuration management: {e}")
+        print(f"Error: Configuration management failed - {create_user_friendly_message(e, 'managing search configurations')}")
+        print("The application will continue to work with default search behavior.")
+        return 1
+
+
+def _handle_update_config(search_manager: SearchConfigManager, update_args: List[str]) -> int:
+    """Handle the --update-config command parsing and execution.
+    
+    Args:
+        search_manager: SearchConfigManager instance
+        update_args: List of arguments from --update-config
+        
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    if len(update_args) < 2:
+        print("Error: --update-config requires at least a name and one field to update")
+        print("Usage: --update-config NAME query=\"new query\" description=\"new description\"")
+        return 1
+    
+    name = update_args[0]
+    
+    # Parse field=value pairs
+    query = None
+    description = None
+    
+    for arg in update_args[1:]:
+        if '=' not in arg:
+            print(f"Error: Invalid update argument '{arg}'. Expected format: field=value")
+            return 1
+        
+        field, value = arg.split('=', 1)
+        field = field.strip().lower()
+        value = value.strip().strip('"\'')  # Remove quotes if present
+        
+        if field == 'query':
+            query = value
+        elif field == 'description':
+            description = value
+        else:
+            print(f"Error: Unknown field '{field}'. Supported fields: query, description")
+            return 1
+    
+    if query is None and description is None:
+        print("Error: At least one field (query or description) must be specified for update")
+        return 1
+    
+    return update_search_config(search_manager, name, query, description)
+
+
+def determine_search_query(args, config) -> str:
+    """Determine which search query to use based on arguments and config.
+    
+    Args:
+        args: Parsed command-line arguments
+        config: Application configuration
+        
+    Returns:
+        Gmail search query string to use
+        
+    Raises:
+        SearchConfigError: If configuration-related errors occur
+        ValueError: If specified configuration is not found or invalid (for backward compatibility)
+    """
+    logger = logging.getLogger(__name__)
+    
+    # Priority: --search-query > --search-config > default
+    if args.search_query and args.search_query.strip():
+        query = args.search_query.strip()
+        
+        # Validate custom query if validation is enabled and search features are available
+        search_configs_file = getattr(config, 'search_configs_file', 'search_configs.json')
+        enable_validation = getattr(config, 'enable_search_validation', True)
+        
+        if enable_validation:
+            try:
+                search_manager = SearchConfigManager(search_configs_file)
+                if search_manager.is_search_feature_available():
+                    is_valid, error_msg = search_manager.validate_query(query)
+                    if not is_valid:
+                        suggestions = search_manager.validator.suggest_corrections(query)
+                        logger.warning(f"Custom search query may be invalid: {error_msg}")
+                        if suggestions:
+                            logger.info(f"Query suggestions: {'; '.join(suggestions)}")
+                        # Don't raise error for custom queries, just warn
+                else:
+                    logger.info("Search validation unavailable, skipping query validation")
+            except Exception as e:
+                logger.warning(f"Could not validate custom query (search features may be unavailable): {e}")
+        
+        logger.info(f"Using custom search query: {query}")
+        return query
+    
+    elif args.search_config:
+        search_configs_file = getattr(config, 'search_configs_file', 'search_configs.json')
+        
+        try:
+            search_manager = SearchConfigManager(search_configs_file)
+            
+            # Check if search features are available
+            if not search_manager.is_search_feature_available():
+                logger.warning("Search configuration features are unavailable, falling back to default query")
+                # Fall through to default query
+            else:
+                saved_config = search_manager.load_config_or_raise(args.search_config)
+                
+                # Update usage statistics
+                try:
+                    search_manager.update_usage_stats(args.search_config)
+                    logger.debug(f"Updated usage statistics for configuration: {args.search_config}")
+                except Exception as e:
+                    logger.warning(f"Failed to update usage statistics: {e}")
+                
+                logger.info(f"Using saved search configuration '{args.search_config}': {saved_config.query}")
+                return saved_config.query
+            
+        except ConfigurationNotFoundError as e:
+            logger.error(str(e))
+            # Convert to ValueError for backward compatibility
+            raise ValueError(str(e))
+        except CorruptedConfigFileError as e:
+            logger.error(f"Configuration file is corrupted: {e}")
+            logger.info("Falling back to default search query")
+            # Fall through to default query
+        except SearchConfigError as e:
+            logger.error(f"Search configuration error: {e}")
+            # Convert to ValueError for backward compatibility
+            raise ValueError(str(e))
+        except Exception as e:
+            logger.error(f"Unexpected error loading search configuration: {e}")
+            logger.info("Falling back to default search query")
+            # Fall through to default query
+    
+    # Use default search query (fallback)
+    default_query = getattr(config, 'default_search_query', 'is:unread is:important')
+    logger.info(f"Using default search query: {default_query}")
+    return default_query
+
+
+def handle_search_help(operator: str = None) -> int:
+    """Handle the --help-search command to show Gmail search operator help.
+    
+    Args:
+        operator: Specific operator to show help for, or 'all' for all operators
+        
+    Returns:
+        Exit code (0 for success)
+    """
+    try:
+        if operator == 'all' or operator is None:
+            help_text = GmailSearchHelp.get_operator_help()
+        else:
+            # Remove trailing colon if present for user convenience
+            if operator.endswith(':'):
+                operator = operator[:-1] + ':'
+            elif not operator.endswith(':'):
+                operator = operator + ':'
+            
+            help_text = GmailSearchHelp.get_operator_help(operator)
+        
+        print(help_text)
+        return 0
+        
+    except Exception as e:
+        print(f"Error displaying search help: {e}")
+        return 1
+
+
+def show_example_configs() -> int:
+    """Handle the --example-configs command to show example configurations.
+    
+    Returns:
+        Exit code (0 for success)
+    """
+    try:
+        print("\nExample Gmail Search Configurations")
+        print("=" * 38)
+        print("\nThese are pre-defined configurations for common use cases.")
+        print("Use --save-config to add any of these to your personal configurations.\n")
+        
+        categories = ExampleConfigurations.get_config_by_category()
+        
+        for category, configs in categories.items():
+            if not configs:
+                continue
+                
+            print(f"\n{category}")
+            print("-" * len(category))
+            
+            for config in configs:
+                print(f"\nName: {config.name}")
+                print(f"Query: {config.query}")
+                print(f"Description: {config.description}")
+                print(f"Usage: --search-config {config.name}")
+        
+        print("\n" + "=" * 50)
+        print("To save any example as your own configuration:")
+        print('--save-config "my-name" "query" "description"')
+        print("\nTo see help for Gmail search operators:")
+        print("--help-search")
+        print("\nTo validate a query before using it:")
+        print('--validate-query "your query here"')
+        
+        return 0
+        
+    except Exception as e:
+        print(f"Error displaying example configurations: {e}")
+        return 1
+
+
+def validate_search_query(query: str) -> int:
+    """Handle the --validate-query command to validate a Gmail search query.
+    
+    Args:
+        query: Gmail search query to validate
+        
+    Returns:
+        Exit code (0 for valid query, 1 for invalid query)
+    """
+    try:
+        from config.search_configs import QueryValidator
+        
+        validator = QueryValidator()
+        is_valid, error_msg = validator.validate_query(query)
+        
+        print(f"\nQuery: {query}")
+        print("=" * (len(query) + 7))
+        
+        if is_valid:
+            print("✓ Query is valid!")
+            
+            # Show suggestions for improvement
+            suggestions = GmailSearchHelp.get_search_suggestions(query)
+            if suggestions:
+                print("\nSuggestions for improvement:")
+                for suggestion in suggestions:
+                    print(f"  • {suggestion}")
+            
+            # Show relevant example configurations
+            relevant_examples = ExampleConfigurations.get_config_suggestions_for_query(query)
+            if relevant_examples:
+                print("\nRelated example configurations:")
+                for config in relevant_examples:
+                    print(f"  • {config.name}: {config.description}")
+                    print(f"    Query: {config.query}")
+            
+            return 0
+        else:
+            print(f"✗ Query is invalid: {error_msg}")
+            
+            # Show correction suggestions
+            suggestions = validator.suggest_corrections(query)
+            if suggestions:
+                print("\nSuggestions:")
+                for suggestion in suggestions:
+                    print(f"  • {suggestion}")
+            
+            print("\nFor help with Gmail search operators, use: --help-search")
+            return 1
+            
+    except Exception as e:
+        print(f"Error validating query: {e}")
+        return 1
+
+
 def process_emails() -> int:
     """
     Main email processing workflow.
@@ -108,6 +798,20 @@ def process_emails() -> int:
     try:
         # Parse command-line arguments
         args = parse_arguments()
+        
+        # Handle configuration management commands first (these exit early)
+        if args.list_configs or args.save_config or args.delete_config or args.update_config:
+            return handle_config_commands(args)
+        
+        # Handle help and example commands (these also exit early)
+        if args.help_search:
+            return handle_search_help(args.help_search)
+        
+        if args.example_configs:
+            return show_example_configs()
+        
+        if args.validate_query:
+            return validate_search_query(args.validate_query)
         
         # Load configuration
         logger.info("Loading configuration...")
@@ -163,13 +867,20 @@ def process_emails() -> int:
             logger.error(create_user_friendly_message(e, "initializing file storage"))
             return 1
         
-        # Fetch important unread emails with error handling
+        # Determine search query to use
         try:
-            logger.info(f"Fetching up to {config.max_emails_per_run} important unread emails...")
-            raw_emails = email_fetcher.fetch_important_unread_emails(config.max_emails_per_run)
+            search_query = determine_search_query(args, config)
+        except ValueError as e:
+            logger.error(str(e))
+            return 1
+        
+        # Fetch emails with custom or default query
+        try:
+            logger.info(f"Fetching up to {config.max_emails_per_run} emails with query: {search_query}")
+            raw_emails = email_fetcher.fetch_emails_with_query(search_query, config.max_emails_per_run)
             
             if not raw_emails:
-                logger.info("No important unread emails found")
+                logger.info("No emails found matching the search criteria")
                 # Create empty summary file
                 try:
                     file_path = yaml_writer.create_empty_summary_file()
@@ -179,7 +890,7 @@ def process_emails() -> int:
                     logger.error(create_user_friendly_message(e, "creating empty summary file"))
                     return 1
             
-            logger.info(f"Found {len(raw_emails)} important unread emails")
+            logger.info(f"Found {len(raw_emails)} emails matching search criteria")
             
         except (EmailFetchError, RetryableError, NonRetryableError) as e:
             logger.error(create_user_friendly_message(e, "fetching emails from Gmail"))
