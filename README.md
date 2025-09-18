@@ -6,11 +6,14 @@ A Python command-line tool that automatically connects to your Gmail account, id
 
 - **Automated Gmail Integration**: Secure OAuth2 authentication with Gmail API ✅
 - **Smart Email Filtering**: Focuses on emails marked as both important and unread ✅
+- **Custom Search Configurations**: Save and manage custom Gmail search queries ✅
+- **Advanced Search Operators**: Full support for Gmail search syntax with validation ✅
 - **Configuration Management**: Environment variable support with validation ✅
 - **Email Content Processing**: HTML cleaning, text extraction, and data normalization ✅
 - **AI-Powered Summarization**: Uses OpenAI or Claude to generate concise summaries ✅
 - **Structured Storage**: Saves summaries in daily YAML files ✅
 - **Command-Line Interface**: Full CLI with argument parsing and verbose logging ✅
+- **Backward Compatibility**: Graceful degradation and migration support ✅
 - **Modular Architecture**: Clean, maintainable codebase with separated concerns ✅
 
 ## Current Implementation Status
@@ -20,10 +23,13 @@ This project is feature-complete and ready for use:
 - ✅ **Configuration System**: Environment variable loading, validation, and AI provider selection
 - ✅ **Gmail Authentication**: OAuth2 flow with secure token storage and refresh
 - ✅ **Email Fetching**: Retrieval of important unread emails with content extraction and pagination
+- ✅ **Custom Search**: Save, manage, and use custom Gmail search configurations
+- ✅ **Search Validation**: Gmail search query syntax validation with helpful suggestions
 - ✅ **Email Processing**: Content extraction, HTML cleaning, and text normalization
 - ✅ **AI Summarization**: OpenAI/Claude integration for email summaries with structured output
 - ✅ **YAML Storage**: Daily summary file creation and management with append functionality
 - ✅ **CLI Interface**: Complete command-line interface with comprehensive workflow orchestration
+- ✅ **Backward Compatibility**: Migration support and graceful degradation for existing users
 
 ## Project Structure
 
@@ -35,7 +41,9 @@ gmail-email-summarizer/
 │   └── gmail_auth.py      # OAuth2 authentication (✅ Complete)
 ├── config/
 │   ├── __init__.py
-│   └── settings.py        # Configuration management (✅ Complete)
+│   ├── settings.py        # Configuration management (✅ Complete)
+│   ├── search_configs.py  # Search configuration management (✅ Complete)
+│   └── example_configs.py # Example search configurations (✅ Complete)
 ├── gmail_email/
 │   ├── __init__.py        # Module exports (✅ Complete)
 │   ├── fetcher.py         # Gmail API integration (✅ Complete)
@@ -46,6 +54,9 @@ gmail-email-summarizer/
 ├── storage/
 │   ├── __init__.py
 │   └── yaml_writer.py     # YAML file management (✅ Complete)
+├── utils/
+│   ├── __init__.py
+│   └── error_handling.py  # Error handling utilities (✅ Complete)
 ├── requirements.txt       # Python dependencies
 ├── test_basic_functionality.py  # Development testing script
 ├── .env.example           # Environment variable template
@@ -201,6 +212,12 @@ MAX_EMAILS_PER_RUN=50
 OUTPUT_DIRECTORY=email_summaries
 MAX_TOKENS=500
 TEMPERATURE=0.3
+
+# Search Configuration (optional)
+SEARCH_CONFIGS_FILE=search_configs.json
+DEFAULT_SEARCH_QUERY=is:unread is:important
+ENABLE_SEARCH_VALIDATION=true
+MAX_SEARCH_RESULTS=100
 ```
 
 ### API Key Security Best Practices
@@ -342,12 +359,30 @@ python main.py
 
 ### Command-Line Options
 
+#### Basic Options
 | Option | Description | Example |
 |--------|-------------|---------|
 | `--max-emails N` | Process up to N emails (overrides config) | `--max-emails 10` |
 | `--verbose`, `-v` | Enable verbose logging | `--verbose` |
 | `--test-ai` | Test AI service connection and exit | `--test-ai` |
 | `--output-dir DIR` | Specify output directory for YAML files | `--output-dir ./summaries` |
+
+#### Search Customization Options
+| Option | Description | Example |
+|--------|-------------|---------|
+| `--search-config NAME`, `-sc NAME` | Use a saved search configuration | `--search-config work-emails` |
+| `--search-query QUERY`, `-sq QUERY` | Use a custom Gmail search query | `--search-query "from:boss@company.com is:unread"` |
+| `--list-configs` | List all saved search configurations | `--list-configs` |
+| `--save-config NAME QUERY DESC` | Save a new search configuration | `--save-config urgent "is:important newer_than:1d" "Urgent emails from today"` |
+| `--delete-config NAME` | Delete a saved search configuration | `--delete-config old-config` |
+| `--update-config NAME FIELD=VALUE` | Update an existing search configuration | `--update-config work-emails query="from:@company.com is:unread"` |
+
+#### Search Help Options
+| Option | Description | Example |
+|--------|-------------|---------|
+| `--help-search [OPERATOR]` | Show help for Gmail search operators | `--help-search from:` |
+| `--example-configs` | Show example search configurations | `--example-configs` |
+| `--validate-query QUERY` | Validate a Gmail search query | `--validate-query "from:test@example.com"` |
 
 ### Usage Examples
 
@@ -410,6 +445,296 @@ python -c "from config.settings import Config; c = Config(); print(f'AI Provider
 
 # Test with minimal processing for debugging
 python main.py --max-emails 1 --verbose --output-dir ./debug_output
+```
+
+## Search Customization
+
+The Gmail Email Summarizer includes powerful search customization features that allow you to create, save, and manage custom Gmail search queries. This enables you to focus on specific types of emails beyond the default "important and unread" filter.
+
+### Quick Start with Search Customization
+
+#### Using Custom Search Queries
+```bash
+# Use a custom search query directly
+python main.py --search-query "from:manager@company.com is:unread"
+
+# Process emails from a specific domain
+python main.py --search-query "from:@company.com newer_than:2d"
+
+# Find emails with attachments from the last week
+python main.py --search-query "has:attachment newer_than:7d"
+```
+
+#### Saving and Using Search Configurations
+```bash
+# Save a search configuration for work emails
+python main.py --save-config work-emails "from:@company.com is:unread" "Work emails from company domain"
+
+# Use the saved configuration
+python main.py --search-config work-emails
+
+# List all saved configurations
+python main.py --list-configs
+```
+
+### Gmail Search Operators
+
+The tool supports the full range of Gmail search operators. Here are the most commonly used ones:
+
+#### Sender and Recipient Operators
+- `from:email@domain.com` - Emails from specific sender
+- `to:email@domain.com` - Emails sent to specific recipient
+- `cc:email@domain.com` - Emails where someone was CC'd
+- `bcc:email@domain.com` - Emails where someone was BCC'd
+
+#### Content and Subject Operators
+- `subject:"meeting notes"` - Emails with specific subject
+- `"exact phrase"` - Emails containing exact phrase
+- `keyword1 OR keyword2` - Emails containing either keyword
+- `keyword1 AND keyword2` - Emails containing both keywords
+
+#### Date and Time Operators
+- `after:2024-01-01` - Emails after specific date
+- `before:2024-12-31` - Emails before specific date
+- `newer_than:7d` - Emails newer than 7 days
+- `older_than:1m` - Emails older than 1 month
+
+#### Status and Properties
+- `is:unread` - Unread emails
+- `is:read` - Read emails
+- `is:important` - Important emails
+- `is:starred` - Starred emails
+- `has:attachment` - Emails with attachments
+- `larger:10M` - Emails larger than 10MB
+
+#### Location Operators
+- `in:inbox` - Emails in inbox
+- `in:sent` - Emails in sent folder
+- `in:trash` - Emails in trash
+- `label:work` - Emails with specific label
+
+### Search Configuration Management
+
+#### Saving Search Configurations
+```bash
+# Basic syntax
+python main.py --save-config NAME "QUERY" "DESCRIPTION"
+
+# Examples
+python main.py --save-config urgent-emails "is:important newer_than:1d" "Important emails from today"
+python main.py --save-config team-updates "from:team@company.com subject:update" "Team status updates"
+python main.py --save-config large-attachments "has:attachment larger:5M" "Emails with large attachments"
+```
+
+#### Listing and Managing Configurations
+```bash
+# List all saved configurations
+python main.py --list-configs
+
+# Delete a configuration
+python main.py --delete-config old-config
+
+# Update a configuration's query
+python main.py --update-config work-emails query="from:@newcompany.com is:unread"
+
+# Update a configuration's description
+python main.py --update-config work-emails description="Updated work email filter"
+```
+
+#### Using Saved Configurations
+```bash
+# Use a saved configuration
+python main.py --search-config work-emails
+
+# Combine with other options
+python main.py --search-config urgent-emails --max-emails 5 --verbose
+```
+
+### Example Search Configurations
+
+#### Work and Professional
+```bash
+# All work emails from company domain
+python main.py --save-config work-all "from:@company.com" "All emails from company"
+
+# Urgent work emails
+python main.py --save-config work-urgent "from:@company.com (subject:urgent OR subject:asap OR is:important)" "Urgent work emails"
+
+# Meeting invitations and updates
+python main.py --save-config meetings "subject:(meeting OR calendar OR invite OR reschedule)" "Meeting-related emails"
+
+# Project-specific emails
+python main.py --save-config project-alpha "subject:alpha OR subject:'project alpha'" "Project Alpha emails"
+```
+
+#### Personal and Communication
+```bash
+# Family emails
+python main.py --save-config family "from:mom@email.com OR from:dad@email.com OR from:sister@email.com" "Family emails"
+
+# Newsletter and subscriptions
+python main.py --save-config newsletters "from:newsletter OR from:noreply OR subject:unsubscribe" "Newsletters and subscriptions"
+
+# Social media notifications
+python main.py --save-config social "from:@facebook.com OR from:@twitter.com OR from:@linkedin.com" "Social media notifications"
+```
+
+#### Time-Based Filters
+```bash
+# Today's important emails
+python main.py --save-config today-important "is:important newer_than:1d" "Important emails from today"
+
+# This week's unread emails
+python main.py --save-config week-unread "is:unread newer_than:7d" "Unread emails from this week"
+
+# Recent emails with attachments
+python main.py --save-config recent-attachments "has:attachment newer_than:3d" "Recent emails with attachments"
+```
+
+#### Advanced Filters
+```bash
+# Large emails (over 1MB)
+python main.py --save-config large-emails "larger:1M" "Large emails over 1MB"
+
+# Emails from external senders (not from company domain)
+python main.py --save-config external "-from:@company.com is:unread" "External emails (not from company)"
+
+# High-priority emails with specific keywords
+python main.py --save-config high-priority "is:important (subject:deadline OR subject:urgent OR subject:asap)" "High priority deadline emails"
+```
+
+### Search Query Validation
+
+The tool includes built-in validation for Gmail search queries:
+
+#### Validate Before Using
+```bash
+# Validate a query before using it
+python main.py --validate-query "from:test@example.com is:unread"
+
+# Get suggestions for invalid queries
+python main.py --validate-query "form:test@example.com"  # Note the typo
+```
+
+#### Common Validation Errors and Fixes
+- `form:` → `from:` (common typo)
+- `too:` → `to:` (common typo)
+- `subjct:` → `subject:` (common typo)
+- `attachement:` → `has:attachment` (correct operator)
+- `unred:` → `is:unread` (correct syntax)
+
+### Search Help and Documentation
+
+#### Get Help with Search Operators
+```bash
+# Show help for all Gmail search operators
+python main.py --help-search
+
+# Get help for specific operators
+python main.py --help-search from:
+python main.py --help-search date
+python main.py --help-search has:
+```
+
+#### View Example Configurations
+```bash
+# Show pre-defined example configurations
+python main.py --example-configs
+```
+
+### Advanced Search Techniques
+
+#### Combining Multiple Criteria
+```bash
+# Work emails from last week with attachments
+python main.py --search-query "from:@company.com newer_than:7d has:attachment"
+
+# Important emails that aren't newsletters
+python main.py --search-query "is:important -from:newsletter -subject:unsubscribe"
+
+# Emails from specific people about specific projects
+python main.py --search-query "(from:manager@company.com OR from:lead@company.com) (subject:project OR subject:deadline)"
+```
+
+#### Using Exclusion Operators
+```bash
+# All emails except from specific domain
+python main.py --search-query "is:unread -from:@spam.com"
+
+# Important emails but not automated messages
+python main.py --search-query "is:important -from:noreply -from:donotreply"
+```
+
+#### Date Range Queries
+```bash
+# Emails from specific date range
+python main.py --search-query "after:2024-01-01 before:2024-01-31"
+
+# Emails from last month
+python main.py --search-query "newer_than:1m older_than:1d"
+```
+
+### Configuration File Format
+
+Search configurations are stored in `search_configs.json` with the following structure:
+
+```json
+{
+  "version": "1.0",
+  "configs": {
+    "work-emails": {
+      "name": "work-emails",
+      "query": "from:@company.com is:unread",
+      "description": "Work emails from company domain",
+      "created_at": "2024-01-15T10:30:00",
+      "last_used": "2024-01-16T09:15:00",
+      "usage_count": 5
+    }
+  }
+}
+```
+
+### Backward Compatibility
+
+The search customization features are designed with backward compatibility in mind:
+
+- **Existing users**: The application continues to work with default search behavior if no custom configurations are used
+- **Graceful degradation**: If search configuration features are unavailable, the application falls back to default behavior
+- **Migration support**: Configuration files are automatically migrated when the format is updated
+- **Error handling**: Invalid configurations don't prevent the application from running
+
+### Search Configuration Best Practices
+
+#### Organizing Your Configurations
+```bash
+# Use descriptive names
+python main.py --save-config work-urgent-today "from:@company.com is:important newer_than:1d" "Urgent work emails from today"
+
+# Group related configurations with prefixes
+python main.py --save-config work-all "from:@company.com" "All work emails"
+python main.py --save-config work-urgent "from:@company.com is:important" "Urgent work emails"
+python main.py --save-config personal-family "from:family@domain.com" "Family emails"
+```
+
+#### Performance Considerations
+```bash
+# Use specific date ranges to limit results
+python main.py --save-config recent-important "is:important newer_than:7d" "Important emails from last week"
+
+# Combine filters to narrow results
+python main.py --save-config work-attachments "from:@company.com has:attachment newer_than:3d" "Recent work emails with attachments"
+```
+
+#### Regular Maintenance
+```bash
+# Review and clean up old configurations
+python main.py --list-configs
+
+# Update configurations as your needs change
+python main.py --update-config old-config query="updated query here"
+
+# Remove configurations you no longer use
+python main.py --delete-config unused-config
 ```
 
 ### Testing Current Functionality
@@ -722,6 +1047,12 @@ The tool supports configuration through environment variables or a `.env` file:
 - `MAX_TOKENS`: Maximum tokens for AI responses (default: 500)
 - `TEMPERATURE`: AI response creativity (0.0-2.0, default: 0.3)
 
+### Search Configuration Options
+- `SEARCH_CONFIGS_FILE`: Path to search configurations file (default: "search_configs.json")
+- `DEFAULT_SEARCH_QUERY`: Default Gmail search query (default: "is:unread is:important")
+- `ENABLE_SEARCH_VALIDATION`: Enable search query validation (default: true)
+- `MAX_SEARCH_RESULTS`: Maximum search results to fetch (default: 100)
+
 ### Gmail API Configuration
 - Credentials file: `credentials.json` (required)
 - Token storage: `token.json` (auto-generated)
@@ -893,6 +1224,41 @@ This will validate your Gmail credentials and test the implemented functionality
 - Install Python from [python.org](https://python.org) if needed
 - On macOS, consider using Homebrew: `brew install python`
 
+### Search Configuration Issues
+
+#### "Search configuration not found"
+**Problem**: Specified search configuration doesn't exist
+**Solutions**:
+- List available configurations: `python main.py --list-configs`
+- Check the configuration name spelling (case-sensitive)
+- Create the configuration if it doesn't exist: `python main.py --save-config name "query" "description"`
+- Verify the search_configs.json file exists and is readable
+
+#### "Invalid Gmail search query"
+**Problem**: Search query syntax is incorrect
+**Solutions**:
+- Validate your query: `python main.py --validate-query "your query"`
+- Check Gmail search operator help: `python main.py --help-search`
+- Review example configurations: `python main.py --example-configs`
+- Common fixes: `form:` → `from:`, `too:` → `to:`, `subjct:` → `subject:`
+
+#### "Search configuration file corrupted"
+**Problem**: search_configs.json file is damaged or invalid
+**Solutions**:
+- The application automatically creates a backup and recreates the file
+- Check for `.backup_` files in your project directory
+- Delete search_configs.json to reset (you'll lose saved configurations)
+- Restore from backup if available
+
+#### "No emails found with search query"
+**Problem**: Search query returns no results
+**Solutions**:
+- This is normal if no emails match your criteria
+- Test with a broader query: `python main.py --search-query "is:unread"`
+- Check if emails exist in Gmail that match your query
+- Verify date ranges aren't too restrictive
+- Use `--verbose` to see the exact query being used
+
 ### Configuration Issues
 
 #### ".env file not loaded"
@@ -920,6 +1286,29 @@ python main.py --verbose
 
 #### Test individual components
 ```bash
+# Test AI service connection
+python main.py --test-ai
+
+# Test search configuration features
+python main.py --list-configs
+python main.py --validate-query "is:unread"
+python main.py --help-search
+
+# Test custom search queries
+python main.py --search-query "is:unread" --max-emails 1 --verbose
+```
+
+#### Run comprehensive tests
+```bash
+# Run all backward compatibility tests
+python -m pytest test_backward_compatibility.py -v
+
+# Run search configuration tests
+python -m pytest test_search_configs.py -v
+
+# Run search workflow integration tests
+python -m pytest test_search_workflow_integration.py -v
+
 # Test AI service connection
 python main.py --test-ai
 
