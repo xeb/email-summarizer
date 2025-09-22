@@ -7,13 +7,14 @@ generates AI-powered summaries, and stores them in daily YAML files.
 """
 
 import sys
+import os
 import logging
 import argparse
 from datetime import datetime
 from typing import List, Optional
 
 # Import application modules
-from config.settings import load_config, validate_gmail_credentials, ensure_output_directory
+from config.settings import load_config, validate_gmail_credentials, ensure_output_directory, ensure_transcript_directory
 from config.search_configs import (
     SearchConfigManager, SearchConfig, SearchConfigError,
     ConfigurationNotFoundError, InvalidConfigurationError,
@@ -24,7 +25,9 @@ from auth.gmail_auth import GmailAuthError
 from gmail_email.fetcher import create_email_fetcher, EmailFetchError
 from gmail_email.processor import EmailProcessor, EmailData
 from summarization.summarizer import EmailSummarizer
+from summarization.transcript_generator import TranscriptGenerator
 from storage.yaml_writer import YAMLWriter
+from storage.transcript_writer import TranscriptWriter
 from utils.error_handling import (
     RetryableError, NonRetryableError, ErrorCategory,
     create_user_friendly_message, classify_error
@@ -58,6 +61,9 @@ Examples:
   %(prog)s --save-config urgent "is:important newer_than:1d" "Urgent emails from today"
   %(prog)s --delete-config old-config         # Delete a saved configuration
   %(prog)s --update-config work-emails query="from:@company.com is:unread after:2024-01-01"
+  %(prog)s --no-transcript                    # Disable transcript generation
+  %(prog)s --transcript-only 2025-09-19       # Generate transcript from existing YAML
+  %(prog)s --transcript-date 2025-09-19       # Use specific date for transcript
         """
     )
     
@@ -145,6 +151,27 @@ Examples:
         type=str,
         metavar='QUERY',
         help='Validate a Gmail search query and show suggestions'
+    )
+    
+    # Transcript generation arguments
+    parser.add_argument(
+        '--no-transcript',
+        action='store_true',
+        help='Disable transcript generation for this run'
+    )
+    
+    parser.add_argument(
+        '--transcript-only',
+        type=str,
+        metavar='DATE',
+        help='Generate transcript from existing YAML file for specified date (YYYY-MM-DD)'
+    )
+    
+    parser.add_argument(
+        '--transcript-date',
+        type=str,
+        metavar='DATE',
+        help='Specify date for transcript generation (YYYY-MM-DD, defaults to today)'
     )
     
     return parser.parse_args()
@@ -786,6 +813,335 @@ def validate_search_query(query: str) -> int:
         return 1
 
 
+def handle_transcript_only(date: str) -> int:
+    """Handle the --transcript-only command to generate transcript from existing YAML.
+    
+    Args:
+        date: Date string in YYYY-MM-DD format
+        
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Validate date format
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+            logger.info(f"Processing transcript generation for date: {date}")
+        except ValueError:
+            print(f"Error: Invalid date format '{date}'. Expected YYYY-MM-DD format.")
+            logger.error(f"Invalid date format provided: {date}")
+            return 1
+        
+        # Load configuration with error handling
+        try:
+            logger.info("Loading configuration for transcript generation...")
+            config = load_config()
+            logger.info("Configuration loaded successfully")
+        except Exception as e:
+            logger.error(f"Failed to load configuration: {e}")
+            print(f"Error: Could not load configuration - {e}")
+            return 1
+        
+        # Check if transcript generation is enabled
+        if not config.enable_transcript_generation:
+            print("Transcript generation is disabled in configuration.")
+            print("Set ENABLE_TRANSCRIPT_GENERATION=true in your .env file to enable it.")
+            logger.info("Transcript generation is disabled in configuration")
+            return 1
+        
+        # Ensure transcript directory exists with enhanced error handling
+        try:
+            if not ensure_transcript_directory(config):
+                logger.error("Failed to create transcript directory")
+                print(f"Error: Could not create transcript directory: {config.transcript_output_directory}")
+                return 1
+        except Exception as e:
+            logger.error(f"Error ensuring transcript directory exists: {e}")
+            print(f"Error: Could not access transcript directory - {e}")
+            return 1
+        
+        # Initialize transcript components with enhanced error handling
+        transcript_generator = None
+        transcript_writer = None
+        
+        try:
+            logger.info("Initializing transcript generator...")
+            transcript_generator = TranscriptGenerator(config)
+            logger.info("Transcript generator initialized successfully")
+        except Exception as e:
+            user_message = create_user_friendly_message(e, "initializing transcript generator")
+            logger.error(f"Failed to initialize transcript generator: {user_message}")
+            print(f"Error: Could not initialize transcript generator - {user_message}")
+            return 1
+        
+        try:
+            logger.info("Initializing transcript writer...")
+            transcript_writer = TranscriptWriter(config.transcript_output_directory)
+            logger.info("Transcript writer initialized successfully")
+        except Exception as e:
+            user_message = create_user_friendly_message(e, "initializing transcript writer")
+            logger.error(f"Failed to initialize transcript writer: {user_message}")
+            print(f"Error: Could not initialize transcript writer - {user_message}")
+            return 1
+        
+        # Find the YAML file for the specified date
+        yaml_file_path = os.path.join(config.output_directory, f"{date}.yaml")
+        
+        if not os.path.exists(yaml_file_path):
+            print(f"Error: YAML file not found for date {date}: {yaml_file_path}")
+            print(f"Please ensure the email summary file exists before generating transcript.")
+            print(f"You can create it by running: python main.py --date {date}")
+            logger.error(f"YAML file not found: {yaml_file_path}")
+            return 1
+        
+        logger.info(f"Found YAML file: {yaml_file_path}")
+        
+        # Generate transcript with comprehensive error handling
+        transcript_content = None
+        try:
+            logger.info(f"Generating transcript for {date}...")
+            transcript_content = transcript_generator.generate_transcript(yaml_file_path, date)
+            
+            if not transcript_content or not transcript_content.strip():
+                logger.error("Generated transcript is empty or contains only whitespace")
+                print("Error: Generated transcript is empty. This may indicate an issue with the YAML file or AI service.")
+                return 1
+            
+            logger.info(f"Generated transcript content ({len(transcript_content)} characters)")
+            
+        except (RetryableError, NonRetryableError) as e:
+            user_message = create_user_friendly_message(e, "generating transcript")
+            logger.error(f"Transcript generation failed: {user_message}")
+            print(f"Error: {user_message}")
+            return 1
+        except Exception as e:
+            logger.error(f"Unexpected error during transcript generation: {e}")
+            print(f"Error: Unexpected error during transcript generation - {e}")
+            return 1
+        
+        # Write transcript to file with enhanced error handling
+        try:
+            logger.info("Writing transcript to file...")
+            transcript_file_path = transcript_writer.write_transcript(transcript_content, date)
+            
+            # Verify the file was written successfully
+            if not os.path.exists(transcript_file_path):
+                logger.error(f"Transcript file was not created: {transcript_file_path}")
+                print(f"Error: Transcript file was not created successfully")
+                return 1
+            
+            logger.info(f"Transcript written successfully to: {transcript_file_path}")
+            
+        except (RetryableError, NonRetryableError) as e:
+            user_message = create_user_friendly_message(e, "writing transcript file")
+            logger.error(f"Failed to write transcript file: {user_message}")
+            print(f"Error: {user_message}")
+            return 1
+        except Exception as e:
+            logger.error(f"Unexpected error writing transcript file: {e}")
+            print(f"Error: Could not write transcript file - {e}")
+            return 1
+        
+        # Display success message
+        print("=" * 60)
+        print("TRANSCRIPT GENERATION COMPLETE")
+        print("=" * 60)
+        print(f"Date: {date}")
+        print(f"Source YAML: {yaml_file_path}")
+        print(f"Transcript file: {transcript_file_path}")
+        
+        # Show transcript stats with error handling
+        try:
+            transcript_size = transcript_writer.get_transcript_size(date)
+            if transcript_size:
+                print(f"Transcript size: {transcript_size} bytes")
+                
+            # Show a preview of the transcript
+            if len(transcript_content) > 100:
+                preview = transcript_content[:100] + "..."
+                print(f"Preview: {preview}")
+            else:
+                print(f"Content: {transcript_content}")
+                
+        except Exception as e:
+            logger.debug(f"Could not get transcript stats: {e}")
+            # Don't fail the operation for stats errors
+        
+        logger.info("Transcript generation completed successfully")
+        return 0
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in transcript generation: {e}")
+        print(f"Error: Transcript generation failed due to unexpected error - {e}")
+        return 1
+
+
+def generate_transcript_for_workflow(config, yaml_file_path: str, transcript_date: Optional[str] = None, verbose: bool = False) -> bool:
+    """Generate transcript as part of the main email processing workflow.
+    
+    Args:
+        config: Configuration object
+        yaml_file_path: Path to the YAML file that was just created
+        transcript_date: Optional date override for transcript generation
+        verbose: Whether verbose logging is enabled
+        
+    Returns:
+        bool: True if transcript generation succeeded, False otherwise
+    """
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Validate inputs
+        if not yaml_file_path:
+            logger.error("YAML file path is required for transcript generation")
+            return False
+        
+        if not os.path.exists(yaml_file_path):
+            logger.error(f"YAML file not found: {yaml_file_path}")
+            return False
+        
+        # Determine the date for transcript generation
+        if transcript_date:
+            try:
+                datetime.strptime(transcript_date, "%Y-%m-%d")
+                date = transcript_date
+                if verbose:
+                    logger.info(f"Using specified transcript date: {date}")
+            except ValueError:
+                logger.error(f"Invalid transcript date format: {transcript_date}. Expected YYYY-MM-DD")
+                return False
+        else:
+            # Extract date from YAML file path (e.g., email_summaries/2025-09-19.yaml)
+            yaml_filename = os.path.basename(yaml_file_path)
+            date = yaml_filename.replace('.yaml', '')
+            try:
+                datetime.strptime(date, "%Y-%m-%d")
+                if verbose:
+                    logger.info(f"Extracted date from filename: {date}")
+            except ValueError:
+                logger.error(f"Could not extract valid date from YAML filename: {yaml_filename}")
+                # Try fallback to today's date
+                date = datetime.now().strftime("%Y-%m-%d")
+                logger.warning(f"Using today's date as fallback: {date}")
+        
+        if verbose:
+            logger.info(f"Starting transcript generation for date: {date}")
+        
+        # Ensure transcript directory exists with enhanced error handling
+        try:
+            if not ensure_transcript_directory(config):
+                logger.error("Failed to create transcript directory")
+                return False
+        except Exception as e:
+            logger.error(f"Error ensuring transcript directory exists: {e}")
+            return False
+        
+        # Initialize transcript components with enhanced error handling
+        transcript_generator = None
+        transcript_writer = None
+        
+        try:
+            if verbose:
+                logger.info("Initializing transcript generator...")
+            transcript_generator = TranscriptGenerator(config)
+            if verbose:
+                logger.info("Transcript generator initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize transcript generator: {create_user_friendly_message(e, 'initializing transcript generator')}")
+            return False
+        
+        try:
+            if verbose:
+                logger.info("Initializing transcript writer...")
+            transcript_writer = TranscriptWriter(config.transcript_output_directory)
+            if verbose:
+                logger.info("Transcript writer initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize transcript writer: {create_user_friendly_message(e, 'initializing transcript writer')}")
+            return False
+        
+        # Generate transcript with comprehensive error handling
+        transcript_content = None
+        try:
+            if verbose:
+                logger.info(f"Generating transcript content from {yaml_file_path}...")
+            transcript_content = transcript_generator.generate_transcript(yaml_file_path, date)
+            
+            if not transcript_content or not transcript_content.strip():
+                logger.error("Generated transcript is empty or contains only whitespace")
+                return False
+            
+            if verbose:
+                logger.info(f"Generated transcript content ({len(transcript_content)} characters)")
+            
+        except (RetryableError, NonRetryableError) as e:
+            user_message = create_user_friendly_message(e, 'generating transcript')
+            logger.error(f"Transcript generation failed: {user_message}")
+            if verbose:
+                logger.debug(f"Original error: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error during transcript generation: {e}")
+            if verbose:
+                logger.debug(f"Full error details: {e}", exc_info=True)
+            return False
+        
+        # Write transcript to file with enhanced error handling
+        try:
+            if verbose:
+                logger.info("Writing transcript to file...")
+            transcript_file_path = transcript_writer.write_transcript(transcript_content, date)
+            
+            # Verify the file was written successfully
+            if not os.path.exists(transcript_file_path):
+                logger.error(f"Transcript file was not created: {transcript_file_path}")
+                return False
+            
+            # Log success with file size information
+            try:
+                file_size = os.path.getsize(transcript_file_path)
+                if verbose:
+                    logger.info(f"Transcript written to: {transcript_file_path} ({file_size} bytes)")
+                else:
+                    logger.info(f"Transcript generated: {transcript_file_path}")
+            except OSError:
+                # File exists but can't get size - still a success
+                logger.info(f"Transcript generated: {transcript_file_path}")
+            
+        except (RetryableError, NonRetryableError) as e:
+            user_message = create_user_friendly_message(e, 'writing transcript file')
+            logger.error(f"Failed to write transcript file: {user_message}")
+            if verbose:
+                logger.debug(f"Original error: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error writing transcript file: {e}")
+            if verbose:
+                logger.debug(f"Full error details: {e}", exc_info=True)
+            return False
+        
+        # Log transcript statistics if verbose
+        if verbose:
+            try:
+                transcript_size = transcript_writer.get_transcript_size(date)
+                if transcript_size:
+                    logger.info(f"Transcript file size: {transcript_size} bytes")
+            except Exception as e:
+                logger.debug(f"Could not get transcript size: {e}")
+        
+        if verbose:
+            logger.info("Transcript generation workflow completed successfully")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in transcript workflow: {e}")
+        if verbose:
+            logger.debug(f"Full error details: {e}", exc_info=True)
+        return False
+
+
 def process_emails() -> int:
     """
     Main email processing workflow.
@@ -812,6 +1168,9 @@ def process_emails() -> int:
         
         if args.validate_query:
             return validate_search_query(args.validate_query)
+        
+        if args.transcript_only:
+            return handle_transcript_only(args.transcript_only)
         
         # Load configuration
         logger.info("Loading configuration...")
@@ -885,6 +1244,23 @@ def process_emails() -> int:
                 try:
                     file_path = yaml_writer.create_empty_summary_file()
                     logger.info(f"Created empty summary file: {file_path}")
+                    
+                    # Generate transcript for empty email day if enabled
+                    if not args.no_transcript and config.enable_transcript_generation:
+                        try:
+                            transcript_success = generate_transcript_for_workflow(
+                                config, file_path, args.transcript_date, args.verbose
+                            )
+                            if not transcript_success:
+                                logger.warning("Transcript generation failed for empty email day, but main workflow completed successfully")
+                        except Exception as e:
+                            logger.warning(f"Transcript generation for empty email day encountered an error: {e}")
+                            logger.info("Main email processing workflow completed successfully despite transcript error")
+                    elif args.no_transcript:
+                        logger.info("Transcript generation skipped for empty email day due to --no-transcript flag")
+                    elif not config.enable_transcript_generation:
+                        logger.info("Transcript generation disabled in configuration for empty email day")
+                    
                     return 0
                 except NonRetryableError as e:
                     logger.error(create_user_friendly_message(e, "creating empty summary file"))
@@ -945,6 +1321,23 @@ def process_emails() -> int:
             logger.warning("No emails could be processed successfully")
             file_path = yaml_writer.create_empty_summary_file()
             logger.info(f"Created empty summary file: {file_path}")
+            
+            # Generate transcript for empty email day if enabled
+            if not args.no_transcript and config.enable_transcript_generation:
+                try:
+                    transcript_success = generate_transcript_for_workflow(
+                        config, file_path, args.transcript_date, args.verbose
+                    )
+                    if not transcript_success:
+                        logger.warning("Transcript generation failed for empty email day, but main workflow completed successfully")
+                except Exception as e:
+                    logger.warning(f"Transcript generation for empty email day encountered an error: {e}")
+                    logger.info("Main email processing workflow completed successfully despite transcript error")
+            elif args.no_transcript:
+                logger.info("Transcript generation skipped for empty email day due to --no-transcript flag")
+            elif not config.enable_transcript_generation:
+                logger.info("Transcript generation disabled in configuration for empty email day")
+            
             return 0
         
         logger.info(f"Successfully processed {len(processed_emails)} emails")
@@ -998,6 +1391,22 @@ def process_emails() -> int:
         if stats.get("exists"):
             logger.info(f"File size: {stats.get('file_size', 0)} bytes")
             logger.info(f"Total emails in file: {stats.get('email_count', 0)}")
+        
+        # Generate transcript if enabled and not disabled by CLI flag
+        if not args.no_transcript and config.enable_transcript_generation:
+            try:
+                transcript_success = generate_transcript_for_workflow(
+                    config, file_path, args.transcript_date, args.verbose
+                )
+                if not transcript_success:
+                    logger.warning("Transcript generation failed, but main workflow completed successfully")
+            except Exception as e:
+                logger.warning(f"Transcript generation encountered an error: {e}")
+                logger.info("Main email processing workflow completed successfully despite transcript error")
+        elif args.no_transcript:
+            logger.info("Transcript generation skipped due to --no-transcript flag")
+        elif not config.enable_transcript_generation:
+            logger.info("Transcript generation disabled in configuration")
         
         logger.info("Gmail Email Summarizer completed successfully")
         return 0
