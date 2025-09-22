@@ -45,6 +45,12 @@ class Config:
     enable_search_validation: bool = True
     max_search_results: int = 100
     
+    # Transcript Generation Settings
+    enable_transcript_generation: bool = True
+    transcript_output_directory: str = "transcripts"
+    transcript_max_tokens: int = 1000
+    transcript_temperature: float = 0.7
+    
     def __post_init__(self):
         """Load environment variables and validate configuration after initialization."""
         self._load_from_environment()
@@ -66,12 +72,17 @@ class Config:
         self.search_configs_file = os.getenv("SEARCH_CONFIGS_FILE", self.search_configs_file)
         self.default_search_query = os.getenv("DEFAULT_SEARCH_QUERY", self.default_search_query)
         
+        # Load transcript configuration settings from environment
+        self.transcript_output_directory = os.getenv("TRANSCRIPT_OUTPUT_DIRECTORY", self.transcript_output_directory)
+        
         # Load numeric settings with validation
         try:
             self.max_emails_per_run = int(os.getenv("MAX_EMAILS_PER_RUN", str(self.max_emails_per_run)))
             self.max_tokens = int(os.getenv("MAX_TOKENS", str(self.max_tokens)))
             self.temperature = float(os.getenv("TEMPERATURE", str(self.temperature)))
             self.max_search_results = int(os.getenv("MAX_SEARCH_RESULTS", str(self.max_search_results)))
+            self.transcript_max_tokens = int(os.getenv("TRANSCRIPT_MAX_TOKENS", str(self.transcript_max_tokens)))
+            self.transcript_temperature = float(os.getenv("TRANSCRIPT_TEMPERATURE", str(self.transcript_temperature)))
         except ValueError as e:
             logging.warning(f"Invalid numeric environment variable: {e}")
         
@@ -80,8 +91,12 @@ class Config:
             enable_search_validation_env = os.getenv("ENABLE_SEARCH_VALIDATION")
             if enable_search_validation_env is not None:
                 self.enable_search_validation = enable_search_validation_env.lower() in ("true", "1", "yes", "on")
+            
+            enable_transcript_generation_env = os.getenv("ENABLE_TRANSCRIPT_GENERATION")
+            if enable_transcript_generation_env is not None:
+                self.enable_transcript_generation = enable_transcript_generation_env.lower() in ("true", "1", "yes", "on")
         except Exception as e:
-            logging.warning(f"Invalid boolean environment variable for ENABLE_SEARCH_VALIDATION: {e}")
+            logging.warning(f"Invalid boolean environment variable: {e}")
     
     def _validate_configuration(self):
         """Validate configuration settings and raise errors for invalid values."""
@@ -109,6 +124,12 @@ class Config:
         if self.max_search_results <= 0:
             raise ValueError("max_search_results must be greater than 0")
         
+        if self.transcript_max_tokens <= 0:
+            raise ValueError("transcript_max_tokens must be greater than 0")
+        
+        if not 0.0 <= self.transcript_temperature <= 2.0:
+            raise ValueError("transcript_temperature must be between 0.0 and 2.0")
+        
         # Validate file paths
         if not self.credentials_file:
             raise ValueError("credentials_file cannot be empty")
@@ -122,6 +143,9 @@ class Config:
         if not self.search_configs_file:
             raise ValueError("search_configs_file cannot be empty")
         
+        if not self.transcript_output_directory:
+            raise ValueError("transcript_output_directory cannot be empty")
+        
         # Validate search settings
         if not self.default_search_query:
             raise ValueError("default_search_query cannot be empty")
@@ -133,6 +157,10 @@ class Config:
         # Validate that enable_search_validation is boolean
         if not isinstance(self.enable_search_validation, bool):
             raise ValueError("enable_search_validation must be a boolean value")
+        
+        # Validate that enable_transcript_generation is boolean
+        if not isinstance(self.enable_transcript_generation, bool):
+            raise ValueError("enable_transcript_generation must be a boolean value")
     
     def get_api_key(self) -> str:
         """Get the appropriate API key based on the configured provider."""
@@ -207,4 +235,22 @@ def ensure_output_directory(config: Config) -> bool:
         return True
     except OSError as e:
         logging.error(f"Failed to create output directory {config.output_directory}: {e}")
+        return False
+
+
+def ensure_transcript_directory(config: Config) -> bool:
+    """Ensure the transcript output directory exists, creating it if necessary.
+    
+    Args:
+        config: Configuration instance containing transcript output directory path
+        
+    Returns:
+        bool: True if directory exists or was created successfully, False otherwise
+    """
+    try:
+        os.makedirs(config.transcript_output_directory, exist_ok=True)
+        logging.info(f"Transcript output directory ready: {config.transcript_output_directory}")
+        return True
+    except OSError as e:
+        logging.error(f"Failed to create transcript output directory {config.transcript_output_directory}: {e}")
         return False

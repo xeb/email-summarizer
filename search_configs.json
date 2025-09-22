@@ -3,10 +3,10 @@
     "school-emails": {
       "created_at": "2025-09-17T19:45:59.351214",
       "description": "Stoney Brooke Emails - Important",
-      "last_used": "2025-09-17T20:14:16.173799",
+      "last_used": "2025-09-21T21:25:01.414927",
       "name": "school-emails",
-      "query": "from:email@renweb.com is:important newer_than:14d",
-      "usage_count": 6
+      "query": "from:email@renweb.com is:important newer_than:5d",
+      "usage_count": 9
     },
     "today-important": {
       "created_at": "2025-09-17T19:44:52.385304",
