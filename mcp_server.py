@@ -108,6 +108,8 @@ async def _search_by_query_impl(
         raise ValueError("Server not properly initialized. Please check configuration.")
 
     try:
+        # Force summarize to False
+        summarize = False
         logger.info(f"Starting search_by_query with query: {query}, max_emails: {max_emails}")
         file_logger.debug(f"Detailed search parameters - query: {query}, max_emails: {max_emails}, summarize: {summarize}, output_dir: {output_dir}")
         # Create email fetcher
@@ -266,11 +268,11 @@ async def search_by_config(
         # Load the search configuration
         search_config = search_manager.load_config(config_name)
 
-        # Use the configuration's query
+        # Use the configuration's query, force summarize to False
         return await _search_by_query_impl(
             query=search_config.query,
             max_emails=max_emails,
-            summarize=summarize,
+            summarize=False,
             output_dir=output_dir
         )
 

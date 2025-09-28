@@ -1,0 +1,49 @@
+{
+  "mcpServers": {
+    "email_summarizer": {
+        "command": "/home/xeb/projects/email-summarizer/run_mcp.sh"
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "."
+      ]
+    } ,
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory",
+        "."
+      ]
+    } ,
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking",
+        "."
+      ]
+    } ,
+	"fetch": {
+	  "command": "uvx",
+      "args": [
+        "mcp-server-fetch"
+      ]
+	} ,
+	"time": {
+	  "command": "uvx",
+      "args": [
+        "mcp-server-time"
+      ]
+	},
+	"shell": {
+	  "command": "uvx",
+      "args": [
+          "git+https://github.com/emsi/mcp-server-shell"
+      ]
+	}
+  }
+}

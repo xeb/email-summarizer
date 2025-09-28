@@ -8,4 +8,13 @@ else
   exit 1
 fi
 cd "${BASE_DIR}/email-summarizer/"
+
+# Export environment variables if they're not already set
+if [ -n "$OPENAI_API_KEY" ]; then
+  export OPENAI_API_KEY
+fi
+if [ -n "$CLAUDE_API_KEY" ]; then
+  export CLAUDE_API_KEY
+fi
+
 ./venv/bin/python mcp_server.py --stdio

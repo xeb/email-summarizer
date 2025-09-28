@@ -1,0 +1,10 @@
+{
+  "name": "email-summarizer",
+  "version": "0.0.1",
+  "mcpServers": {
+    "email_summarizer": {
+        "command": "/home/xeb/projects/email-summarizer/run_mcp.sh",
+        "args": []
+    }
+  }
+}
