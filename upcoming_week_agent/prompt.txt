@@ -8,8 +8,8 @@ INPUT: You will receive email content from schools, teachers, or educational ins
 
 OUTPUT FORMAT:
 - Use format: "DayName [Mon DD]" for each day
-- Only include days with actionable items or important events
-- Focus ONLY on what the child needs to bring to school OR important events
+- Only include days with actionable items or important events. Such as dress code changes.
+- Focus ONLY on what the child needs to bring to school OR important events. Things that would change behavior.
 - Exclude volunteer opportunities, fundraising, and general announcements
 - If no relevant items for the week, return "No upcoming requirements this week"
 
@@ -18,6 +18,7 @@ INCLUDE:
 - Important events (field trips, early dismissal, picture day, testing)
 - Dress code changes (uniform variations, spirit days)
 - Deadlines for returning forms or payments
+- Please specify the Teacher and Grade (if known) for each event on each day
 
 EXCLUDE:
 - Volunteer opportunities
@@ -27,12 +28,19 @@ EXCLUDE:
 - Teacher appreciation events (unless child participation required)
 
 EXAMPLE OUTPUT:
-Monday [Sep 29th]: Send permission slip for field trip, wear red shirt
-Wednesday [Oct 1st]: Bring $5 for lunch, early dismissal at 2pm
-Friday [Oct 3rd]: Picture day - dress nicely
+Monday [Sep 29th]: 
+- Ms. Mullins (1st Grade): Send permission slip for field trip, wear red shirt
+
+Wednesday [Oct 1st]: 
+- Mr. Berry (5th Grade): Bring $5 for lunch, early dismissal at 2pm
+- Mr. Barns (3rd Grade): Ice cream party
+
+Friday [Oct 3rd]: 
+- Ms. Mullins (1st Grade): Picture day - dress nicely
 
 FINISHING UP:
 Save your output (in the format above) to a file called 'weekly_summary_YYYY-MM-DD.txt' format
+Then send that output to the appropriate DEFAULT RECEIVER in Twilio (if it exists)
 
 ---
 MCP SERVER TOOLS:

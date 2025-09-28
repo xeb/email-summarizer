@@ -177,7 +177,8 @@ async def _search_by_query_impl(
                     "subject": email_data.subject,
                     "sender": email_data.sender,
                     "date": email_data.date.isoformat() if email_data.date else None,
-                    "snippet": email.get('snippet', '')
+                    "snippet": email.get('snippet', ''),
+                    "body": email_data.body
                 })
             except Exception as e:
                 logger.error(f"Error processing email: {e}")
