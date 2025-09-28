@@ -55,6 +55,7 @@ Examples:
   %(prog)s --max-emails 10                    # Process up to 10 emails
   %(prog)s --verbose                          # Enable verbose logging
   %(prog)s --test-ai                          # Test AI service connection only
+  %(prog)s --headless                         # Use headless authentication for SSH/servers
   %(prog)s --search-config work-emails        # Use saved search configuration
   %(prog)s --search-query "from:boss@company.com is:unread"  # Use custom query
   %(prog)s --list-configs                     # List all saved configurations
@@ -85,7 +86,13 @@ Examples:
         action='store_true',
         help='Test AI service connection and exit'
     )
-    
+
+    parser.add_argument(
+        '--headless',
+        action='store_true',
+        help='Use headless authentication for SSH/server environments'
+    )
+
     parser.add_argument(
         '--output-dir',
         type=str,
@@ -325,7 +332,7 @@ def save_search_config(search_manager: SearchConfigManager, name: str, query: st
         return 1
     except Exception as e:
         logger.error(f"Unexpected error saving configuration '{name}': {e}")
-        print(f"Error: {create_user_friendly_message(e, f'saving configuration \'{name}\'')}")
+        print(f"Error: {create_user_friendly_message(e, f'saving configuration {name}')}")
         return 1
 
 
@@ -1200,7 +1207,7 @@ def process_emails() -> int:
         # Initialize components with comprehensive error handling
         try:
             logger.info("Initializing email fetcher...")
-            email_fetcher = create_email_fetcher(config.credentials_file, config.token_file)
+            email_fetcher = create_email_fetcher(config.credentials_file, config.token_file, args.headless)
         except (GmailAuthError, EmailFetchError, RetryableError, NonRetryableError) as e:
             logger.error(create_user_friendly_message(e, "initializing Gmail connection"))
             return 1

@@ -496,17 +496,19 @@ class EmailFetcher:
 
 
 def create_email_fetcher(credentials_file: str = "credentials.json",
-                        token_file: str = "token.json") -> EmailFetcher:
+                        token_file: str = "token.json",
+                        headless: bool = False) -> EmailFetcher:
     """
     Create and return an EmailFetcher instance with authenticated Gmail service.
-    
+
     Args:
         credentials_file: Path to OAuth2 credentials file
         token_file: Path to token storage file
-        
+        headless: If True, use device code flow for headless environments
+
     Returns:
         EmailFetcher instance
-        
+
     Raises:
         EmailFetchError: If authentication or service creation fails
     """
@@ -514,7 +516,7 @@ def create_email_fetcher(credentials_file: str = "credentials.json",
     
     try:
         logger.info("Creating email fetcher with Gmail service")
-        gmail_service = get_gmail_service(credentials_file, token_file)
+        gmail_service = get_gmail_service(credentials_file, token_file, headless)
         fetcher = EmailFetcher(gmail_service)
         logger.info("Email fetcher created successfully")
         return fetcher

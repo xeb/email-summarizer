@@ -9,6 +9,7 @@ import os
 import pickle
 import json
 import logging
+import sys
 from typing import Optional
 
 from google.auth.transport.requests import Request
@@ -16,6 +17,9 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build, Resource
 from googleapiclient.errors import HttpError
+
+# Disable OAuth2 HTTPS requirement for localhost (standard for desktop apps)
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 from utils.error_handling import (
     retry_with_backoff, RetryConfig, RetryableError, NonRetryableError,
@@ -34,18 +38,20 @@ class GmailAuthError(NonRetryableError):
         super().__init__(message, category)
 
 
-def authenticate(credentials_file: str = "credentials.json", 
-                token_file: str = "token.json") -> Credentials:
+def authenticate(credentials_file: str = "credentials.json",
+                token_file: str = "token.json",
+                headless: bool = False) -> Credentials:
     """
     Authenticate with Gmail using OAuth2 flow with comprehensive error handling.
-    
+
     Args:
         credentials_file: Path to the OAuth2 credentials JSON file
         token_file: Path to store/retrieve the authentication token
-        
+        headless: If True, use device code flow for headless environments (SSH/servers)
+
     Returns:
         Authenticated credentials object
-        
+
     Raises:
         GmailAuthError: If authentication fails
     """
@@ -113,11 +119,114 @@ def authenticate(credentials_file: str = "credentials.json",
                 flow = InstalledAppFlow.from_client_secrets_file(
                     credentials_file, SCOPES
                 )
-                creds = flow.run_local_server(port=0)
+
+                if headless:
+                    logger.info("Using headless authentication flow")
+
+                    # Check if we're in a truly interactive terminal
+                    # Allow override via environment variable for testing
+                    force_interactive = os.environ.get('GMAIL_FORCE_INTERACTIVE', '').lower() == 'true'
+                    is_interactive = force_interactive or (sys.stdin.isatty() and sys.stdout.isatty())
+
+                    if is_interactive:
+                        logger.info("Interactive terminal detected - using manual authorization flow")
+
+                        # For interactive mode, we'll use a simpler approach:
+                        # Start a local server briefly to get the redirect URI, then use manual input
+                        import socket
+                        import threading
+                        import time
+                        from http.server import HTTPServer, BaseHTTPRequestHandler
+                        from urllib.parse import urlparse, parse_qs
+
+                        # Find an available port
+                        sock = socket.socket()
+                        sock.bind(('', 0))
+                        port = sock.getsockname()[1]
+                        sock.close()
+
+                        # Set the redirect URI
+                        redirect_uri = f'http://localhost:{port}/'
+                        flow.redirect_uri = redirect_uri
+
+                        # Get the authorization URL
+                        auth_url, _ = flow.authorization_url(prompt='consent')
+
+                        print(f"\n{'='*80}")
+                        print(f"GMAIL AUTHORIZATION REQUIRED")
+                        print(f"{'='*80}")
+                        print(f"\nPlease visit this URL to authorize the application:")
+                        print(f"{auth_url}")
+                        print(f"\nAfter completing authorization, you will be redirected to a localhost page.")
+                        print(f"Copy the ENTIRE URL from your browser address bar and paste it below.")
+                        print(f"The URL should start with 'http://localhost:{port}' and contain a 'code=' parameter.")
+                        print(f"\nExample: http://localhost:{port}/?state=...&code=4/0AfJohXm...")
+                        print(f"{'='*80}\n")
+
+                        # Prompt for the authorization code or full URL
+                        try:
+                            auth_response = input("Enter the full redirect URL: ").strip()
+                        except (EOFError, KeyboardInterrupt):
+                            logger.error("Authorization cancelled by user")
+                            raise GmailAuthError(
+                                "OAuth2 authorization cancelled. Please run the command again to retry.",
+                                ErrorCategory.AUTHENTICATION
+                            )
+
+                        if not auth_response:
+                            raise GmailAuthError(
+                                "No authorization URL provided. Please run the command again and paste the full redirect URL.",
+                                ErrorCategory.AUTHENTICATION
+                            )
+
+                        try:
+                            # Process the authorization response
+                            flow.fetch_token(authorization_response=auth_response)
+                            creds = flow.credentials
+                            logger.info("Authorization successful using provided URL")
+                        except Exception as auth_error:
+                            logger.error(f"Failed to process authorization response: {auth_error}")
+                            raise GmailAuthError(
+                                f"Invalid authorization response. Please ensure you copied the complete URL "
+                                f"from your browser after authorization. Error: {auth_error}",
+                                ErrorCategory.AUTHENTICATION
+                            )
+
+                    else:
+                        logger.info("Non-interactive environment detected - using local server method")
+                        logger.info("This will start a local server to capture the OAuth callback")
+
+                        # For non-interactive environments, try local server with explicit instructions
+                        print(f"\n{'='*80}")
+                        print(f"GMAIL AUTHORIZATION REQUIRED (Non-Interactive Mode)")
+                        print(f"{'='*80}")
+                        print(f"Since this is a non-interactive environment, the authorization")
+                        print(f"will be handled automatically once you visit the URL.")
+                        print(f"{'='*80}\n")
+
+                        creds = flow.run_local_server(
+                            port=0,
+                            open_browser=False,
+                            authorization_prompt_message=(
+                                '\nPlease visit this URL to authorize the application:\n{url}\n\n'
+                                'After authorization, the process will complete automatically.\n'
+                                'Keep this terminal session active until authorization completes.\n'
+                            )
+                        )
+                else:
+                    logger.info("Using browser-based authentication flow")
+                    creds = flow.run_local_server(port=0)
+
                 logger.info("OAuth2 authentication completed successfully")
             except Exception as e:
                 logger.error(f"OAuth2 flow failed: {e}")
-                if 'redirect_uri_mismatch' in str(e).lower():
+                if 'could not locate runnable browser' in str(e).lower() and not headless:
+                    raise GmailAuthError(
+                        "No browser available for authentication. "
+                        "For headless environments (SSH/servers), use the --headless flag.",
+                        ErrorCategory.ENVIRONMENT
+                    )
+                elif 'redirect_uri_mismatch' in str(e).lower():
                     raise GmailAuthError(
                         "OAuth2 redirect URI mismatch. Please ensure your credentials file "
                         "is configured for a desktop application, not a web application.",
@@ -156,17 +265,19 @@ def authenticate(credentials_file: str = "credentials.json",
     non_retryable_exceptions=(NonRetryableError, GmailAuthError)
 )
 def get_gmail_service(credentials_file: str = "credentials.json",
-                     token_file: str = "token.json") -> Resource:
+                     token_file: str = "token.json",
+                     headless: bool = False) -> Resource:
     """
     Create and return a Gmail API service object with retry logic.
-    
+
     Args:
         credentials_file: Path to the OAuth2 credentials JSON file
         token_file: Path to store/retrieve the authentication token
-        
+        headless: If True, use device code flow for headless environments
+
     Returns:
         Gmail API service object
-        
+
     Raises:
         GmailAuthError: If authentication or service creation fails
         RetryableError: If a retryable error occurs (handled by retry decorator)
@@ -175,7 +286,7 @@ def get_gmail_service(credentials_file: str = "credentials.json",
     
     try:
         logger.info("Authenticating with Gmail API")
-        creds = authenticate(credentials_file, token_file)
+        creds = authenticate(credentials_file, token_file, headless)
         
         logger.debug("Building Gmail API service")
         service = build('gmail', 'v1', credentials=creds)
