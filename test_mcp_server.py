@@ -46,6 +46,7 @@ class MCPServerTests:
         await self.test_search_by_query()
         await self.test_delete_config()
         await self.test_ai_connection()
+        await self.test_stdio_argument()
 
         # Print summary
         self.print_summary()
@@ -327,6 +328,35 @@ class MCPServerTests:
             print(f"❌ test_ai: FAILED - Exception: {e}")
             self.failed_tests += 1
             self.test_results["test_ai"] = f"FAILED - {str(e)}"
+
+    async def test_stdio_argument(self):
+        """Test the --stdio command-line argument."""
+        print("🔍 Testing --stdio argument parsing...")
+        try:
+            from mcp_server import get_arg_parser
+            parser = get_arg_parser()
+
+            # Test case 1: No arguments
+            args = parser.parse_args([])
+            if not args.stdio:
+                print("✅ --stdio parsing (no args): PASSED")
+            else:
+                raise AssertionError("--stdio should be False when no arguments are given.")
+
+            # Test case 2: --stdio argument present
+            args = parser.parse_args(['--stdio'])
+            if args.stdio:
+                print("✅ --stdio parsing (with --stdio): PASSED")
+            else:
+                raise AssertionError("--stdio should be True when argument is present.")
+
+            self.passed_tests += 1
+            self.test_results["stdio_argument"] = "PASSED"
+
+        except Exception as e:
+            print(f"❌ --stdio parsing: FAILED - Exception: {e}")
+            self.failed_tests += 1
+            self.test_results["stdio_argument"] = f"FAILED - {str(e)}"
 
     def print_summary(self):
         """Print test summary."""

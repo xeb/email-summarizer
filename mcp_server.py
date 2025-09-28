@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import sys
+import argparse
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -488,7 +489,19 @@ async def get_status() -> Dict[str, Any]:
         }
 
 
+def get_arg_parser():
+    """Get argument parser for MCP server."""
+    parser = argparse.ArgumentParser(description="Gmail Email Summarizer MCP Server")
+    parser.add_argument(
+        "--stdio", action="store_true", help="Run server with STDIO transport"
+    )
+    return parser
+
+
 if __name__ == "__main__":
+    parser = get_arg_parser()
+    args = parser.parse_args()
+
     logging.info("Starting Gmail Email Summarizer MCP Server")
 
     # Initialize services
@@ -496,4 +509,7 @@ if __name__ == "__main__":
         logging.error("Failed to initialize services. Server may not function properly.")
 
     # Run the server
-    mcp.run(transport="sse", host="0.0.0.0", port=8775)
+    if args.stdio:
+        mcp.run(transport="stdio")
+    else:
+        mcp.run(transport="sse", host="0.0.0.0", port=8775)
