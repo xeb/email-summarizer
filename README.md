@@ -36,31 +36,29 @@ This project is feature-complete and ready for use:
 ```
 gmail-email-summarizer/
 ├── main.py                 # Entry point and CLI interface (✅ Complete)
+├── mcp_server.py           # MCP server for AI assistant integration (✅ Complete)
 ├── auth/
-│   ├── __init__.py
-│   └── gmail_auth.py      # OAuth2 authentication (✅ Complete)
+│   └── gmail_auth.py       # OAuth2 authentication (✅ Complete)
 ├── config/
-│   ├── __init__.py
-│   ├── settings.py        # Configuration management (✅ Complete)
-│   ├── search_configs.py  # Search configuration management (✅ Complete)
-│   └── example_configs.py # Example search configurations (✅ Complete)
+│   ├── settings.py         # Configuration management (✅ Complete)
+│   ├── search_configs.py   # Search configuration management (✅ Complete)
+│   └── example_configs.py  # Example search configurations (✅ Complete)
 ├── gmail_email/
-│   ├── __init__.py        # Module exports (✅ Complete)
-│   ├── fetcher.py         # Gmail API integration (✅ Complete)
-│   └── processor.py       # Email content processing (✅ Complete)
+│   ├── fetcher.py          # Gmail API integration (✅ Complete)
+│   └── processor.py        # Email content processing (✅ Complete)
 ├── summarization/
-│   ├── __init__.py
-│   └── summarizer.py      # AI-powered summarization (✅ Complete)
+│   ├── summarizer.py       # AI-powered summarization (✅ Complete)
+│   └── transcript_generator.py # Transcript generation (✅ Complete)
 ├── storage/
-│   ├── __init__.py
-│   └── yaml_writer.py     # YAML file management (✅ Complete)
+│   ├── yaml_writer.py      # YAML file management (✅ Complete)
+│   └── transcript_writer.py # Transcript file management (✅ Complete)
 ├── utils/
-│   ├── __init__.py
-│   └── error_handling.py  # Error handling utilities (✅ Complete)
-├── requirements.txt       # Python dependencies
-├── test_basic_functionality.py  # Development testing script
-├── .env.example           # Environment variable template
-└── README.md             # This file
+│   └── error_handling.py   # Error handling utilities (✅ Complete)
+├── requirements.txt        # Python dependencies
+├── .env.example            # Environment variable template
+├── sample_agent/           # Example agent integrations
+├── transcripts/            # Output directory for transcripts
+└── README.md               # This file
 ```
 
 ## Installation
@@ -824,104 +822,7 @@ services:
       - TZ=America/New_York
 ```
 
-## MCP Server Mode
 
-The project includes an MCP (Model Context Protocol) server that exposes the email summarizer functionality as a web service with OAuth authentication. This allows other applications and AI assistants to interact with your Gmail data securely.
-
-### MCP Server Features
-
-- **OAuth 2.0 Authentication**: Secure user authentication with Google OAuth
-- **RESTful API**: Clean HTTP API for email operations
-- **Real-time Processing**: Process emails on-demand with custom queries
-- **Configuration Management**: CRUD operations for search configurations
-- **AI Integration**: On-demand email summarization
-- **Comprehensive Logging**: Detailed logs for debugging and monitoring
-
-### MCP Server Setup
-
-#### 1. OAuth Credentials Configuration
-
-Create your OAuth credentials in Google Cloud Console:
-
-1. **Go to Google Cloud Console**:
-   - Visit [Google Cloud Console](https://console.cloud.google.com/)
-   - Select or create a project
-
-2. **Enable Gmail API**:
-   - Go to "APIs & Services" > "Library"
-   - Search for "Gmail API" and enable it
-
-3. **Create OAuth 2.0 Credentials**:
-   - Go to "APIs & Services" > "Credentials"
-   - Click "Create Credentials" > "OAuth client ID"
-   - Choose "Web application"
-   - Add authorized redirect URIs:
-     - `http://localhost:8775/oauth/callback`
-     - `http://127.0.0.1:8775/oauth/callback`
-
-4. **Download and Configure**:
-   - Download the credentials JSON file
-   - Create `mcp_server_oauth_credentials.json` in the project root:
-
-```json
-{
-  "client_id": "your-client-id-here.apps.googleusercontent.com",
-  "client_secret": "your-client-secret-here",
-  "redirect_uris": [
-    "http://localhost:8775/oauth/callback",
-    "http://127.0.0.1:8775/oauth/callback"
-  ],
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token",
-  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-  "scopes": [
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "openid",
-    "email",
-    "profile"
-  ],
-  "project_id": "your-project-id"
-}
-```
-
-#### 2. Start the MCP Server
-
-```bash
-# Start the server
-python mcp_server.py
-
-# Server will be available at:
-# http://localhost:8775/sse (MCP endpoint)
-# http://localhost:8775/ (status page)
-```
-
-#### 3. Available MCP Tools
-
-The server exposes these tools for email operations:
-
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `search_by_query` | Search emails with custom Gmail query | `query`, `max_emails`, `summarize`, `output_dir` |
-| `search_by_config` | Search using saved configuration | `config_name`, `max_emails`, `summarize`, `output_dir` |
-| `create_config` | Create new search configuration | `name`, `query`, `description` |
-| `list_configs` | List all saved configurations | None |
-| `delete_config` | Delete a configuration | `name` |
-| `test_ai` | Test AI service connection | None |
-| `get_status` | Get server status and info | None |
-
-#### 4. MCP Server Logs
-
-The server creates detailed logs for monitoring:
-
-- **`mcp_server.log`**: Main application events and errors
-- **`mcp_server_debug.log`**: Detailed debugging information
-
-#### 5. Security Considerations
-
-- **OAuth Credentials**: Never commit `mcp_server_oauth_credentials.json` to version control
-- **Token Storage**: OAuth tokens are stored securely and managed automatically
-- **Network Security**: Run behind a reverse proxy (nginx/Apache) for production
-- **Rate Limiting**: Implement rate limiting for production deployments
 
 ### Application Workflow
 
