@@ -1,5 +1,13 @@
 {
   "configs": {
+    "CVCS": {
+      "created_at": "2025-09-27T21:34:48.173329",
+      "description": "Search for emails related to CVCS the school",
+      "last_used": null,
+      "name": "CVCS",
+      "query": "CVCS",
+      "usage_count": 0
+    },
     "school-emails": {
       "created_at": "2025-09-17T19:45:59.351214",
       "description": "Stoney Brooke Emails - Important",

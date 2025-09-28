@@ -75,3 +75,6 @@ private/
 *.tmp
 *.temp
 .cache/
+
+# Temp working files
+adk-samples

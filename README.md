@@ -36,31 +36,29 @@ This project is feature-complete and ready for use:
 ```
 gmail-email-summarizer/
 ├── main.py                 # Entry point and CLI interface (✅ Complete)
+├── mcp_server.py           # MCP server for AI assistant integration (✅ Complete)
 ├── auth/
-│   ├── __init__.py
-│   └── gmail_auth.py      # OAuth2 authentication (✅ Complete)
+│   └── gmail_auth.py       # OAuth2 authentication (✅ Complete)
 ├── config/
-│   ├── __init__.py
-│   ├── settings.py        # Configuration management (✅ Complete)
-│   ├── search_configs.py  # Search configuration management (✅ Complete)
-│   └── example_configs.py # Example search configurations (✅ Complete)
+│   ├── settings.py         # Configuration management (✅ Complete)
+│   ├── search_configs.py   # Search configuration management (✅ Complete)
+│   └── example_configs.py  # Example search configurations (✅ Complete)
 ├── gmail_email/
-│   ├── __init__.py        # Module exports (✅ Complete)
-│   ├── fetcher.py         # Gmail API integration (✅ Complete)
-│   └── processor.py       # Email content processing (✅ Complete)
+│   ├── fetcher.py          # Gmail API integration (✅ Complete)
+│   └── processor.py        # Email content processing (✅ Complete)
 ├── summarization/
-│   ├── __init__.py
-│   └── summarizer.py      # AI-powered summarization (✅ Complete)
+│   ├── summarizer.py       # AI-powered summarization (✅ Complete)
+│   └── transcript_generator.py # Transcript generation (✅ Complete)
 ├── storage/
-│   ├── __init__.py
-│   └── yaml_writer.py     # YAML file management (✅ Complete)
+│   ├── yaml_writer.py      # YAML file management (✅ Complete)
+│   └── transcript_writer.py # Transcript file management (✅ Complete)
 ├── utils/
-│   ├── __init__.py
-│   └── error_handling.py  # Error handling utilities (✅ Complete)
-├── requirements.txt       # Python dependencies
-├── test_basic_functionality.py  # Development testing script
-├── .env.example           # Environment variable template
-└── README.md             # This file
+│   └── error_handling.py   # Error handling utilities (✅ Complete)
+├── requirements.txt        # Python dependencies
+├── .env.example            # Environment variable template
+├── sample_agent/           # Example agent integrations
+├── transcripts/            # Output directory for transcripts
+└── README.md               # This file
 ```
 
 ## Installation
@@ -823,6 +821,8 @@ services:
     environment:
       - TZ=America/New_York
 ```
+
+
 
 ### Application Workflow
 
