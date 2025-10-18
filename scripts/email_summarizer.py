@@ -47,6 +47,47 @@ SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 
+def find_file(filename: str) -> str:
+    """
+    Find a file by searching in multiple locations.
+
+    Search order:
+    1. Current working directory
+    2. Parent directory
+    3. Script's directory
+    4. Parent of script's directory (project root)
+
+    Args:
+        filename: Name of the file to find
+
+    Returns:
+        Full path to the file, or the original filename if not found
+    """
+    # Check current directory
+    if os.path.exists(filename):
+        return filename
+
+    # Check parent directory
+    parent_path = os.path.join('..', filename)
+    if os.path.exists(parent_path):
+        return parent_path
+
+    # Check script's directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    script_path = os.path.join(script_dir, filename)
+    if os.path.exists(script_path):
+        return script_path
+
+    # Check parent of script's directory (project root)
+    project_root = os.path.dirname(script_dir)
+    root_path = os.path.join(project_root, filename)
+    if os.path.exists(root_path):
+        return root_path
+
+    # Return original filename if not found (will trigger proper error handling)
+    return filename
+
+
 @dataclass
 class EmailSummary:
     """Simple email summary data structure."""
@@ -69,8 +110,9 @@ class EmailSummarizer:
             credentials_file: Path to OAuth2 credentials file
             token_file: Path to stored authentication token
         """
-        self.credentials_file = credentials_file
-        self.token_file = token_file
+        # Resolve file paths by searching in multiple locations
+        self.credentials_file = find_file(credentials_file)
+        self.token_file = find_file(token_file)
         self.service = None
 
     def authenticate(self) -> bool:

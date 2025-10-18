@@ -40,6 +40,46 @@ SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 
+def find_file(filename: str) -> str:
+    """
+    Find a file by searching in multiple locations.
+
+    Search order:
+    1. Current working directory
+    2. Parent directory
+    3. Script's directory
+
+    Args:
+        filename: Name of the file to find
+
+    Returns:
+        Full path to the file, or the original filename if not found
+    """
+    # Check current directory
+    if os.path.exists(filename):
+        return filename
+
+    # Check parent directory
+    parent_path = os.path.join('..', filename)
+    if os.path.exists(parent_path):
+        return parent_path
+
+    # Check script's directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    script_path = os.path.join(script_dir, filename)
+    if os.path.exists(script_path):
+        return script_path
+
+    # Check parent of script's directory (project root)
+    project_root = os.path.dirname(script_dir)
+    root_path = os.path.join(project_root, filename)
+    if os.path.exists(root_path):
+        return root_path
+
+    # Return original filename if not found (will trigger proper error handling)
+    return filename
+
+
 def authenticate(credentials_file: str = "credentials.json",
                 token_file: str = "token.json",
                 headless: bool = False,
@@ -57,6 +97,10 @@ def authenticate(credentials_file: str = "credentials.json",
         bool: True if authentication successful, False otherwise
     """
     creds = None
+
+    # Resolve file paths
+    credentials_file = find_file(credentials_file)
+    token_file = find_file(token_file)
 
     # Load existing token if available and not forcing reauth
     if os.path.exists(token_file) and not force_reauth:
