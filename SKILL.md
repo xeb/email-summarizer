@@ -17,13 +17,13 @@ This skill helps you search your Gmail for school-related emails about upcoming 
 Authenticate with Gmail (only needed once):
 
 ```bash
-uv run email_summarizer_auth.py
+uv run scripts/email_summarizer_auth.py
 ```
 
 For headless/SSH environments:
 
 ```bash
-uv run email_summarizer_auth.py --headless
+uv run scripts/email_summarizer_auth.py --headless
 ```
 
 ## Workflow: How to Help Users Find Upcoming School Events
@@ -47,10 +47,10 @@ If the school uses a specific domain (e.g., `@springfield-schools.org`):
 
 ```bash
 # Recent unread emails from school
-uv run email_summarizer.py --filter '{"from": "@school-domain.org", "is_unread": true, "newer_than": "7d"}'
+uv run scripts/email_summarizer.py --filter '{"from": "@school-domain.org", "is_unread": true, "newer_than": "7d"}'
 
 # All important emails from school this month
-uv run email_summarizer.py --filter '{"from": "@school-domain.org", "is_important": true, "newer_than": "30d"}'
+uv run scripts/email_summarizer.py --filter '{"from": "@school-domain.org", "is_important": true, "newer_than": "30d"}'
 ```
 
 #### Option B: Search by School Name in Subject
@@ -59,7 +59,7 @@ If you have the school name:
 
 ```bash
 # Search for school name in subject
-uv run email_summarizer.py --query "subject:'Lincoln Elementary' newer_than:14d"
+uv run scripts/email_summarizer.py --query "subject:'Lincoln Elementary' newer_than:14d"
 ```
 
 ### Step 3: Filter for Event-Related Keywords
@@ -68,16 +68,16 @@ Search for specific event types:
 
 ```bash
 # Field trips
-uv run email_summarizer.py --query "from:@school.org subject:field trip newer_than:30d"
+uv run scripts/email_summarizer.py --query "from:@school.org subject:field trip newer_than:30d"
 
 # Parent-teacher conferences
-uv run email_summarizer.py --query "from:@school.org subject:conference newer_than:14d"
+uv run scripts/email_summarizer.py --query "from:@school.org subject:conference newer_than:14d"
 
 # Assignments and homework
-uv run email_summarizer.py --query "from:@school.org subject:assignment OR subject:homework is:unread"
+uv run scripts/email_summarizer.py --query "from:@school.org subject:assignment OR subject:homework is:unread"
 
 # School events
-uv run email_summarizer.py --query "from:@school.org subject:event OR subject:assembly newer_than:7d"
+uv run scripts/email_summarizer.py --query "from:@school.org subject:event OR subject:assembly newer_than:7d"
 ```
 
 ### Step 4: Present Results to User
@@ -113,7 +113,7 @@ Schools often send concise announcements. Use filters to find brief, actionable 
 
 ```bash
 # Smaller emails are often quick announcements
-uv run email_summarizer.py --query "from:@school.org smaller:50K newer_than:7d"
+uv run scripts/email_summarizer.py --query "from:@school.org smaller:50K newer_than:7d"
 ```
 
 ### 4. **Prioritize Important/Unread**
@@ -122,7 +122,7 @@ Focus on what needs attention:
 
 ```bash
 # Unread important emails
-uv run email_summarizer.py --filter '{"from": "@school.org", "is_important": true, "is_unread": true}'
+uv run scripts/email_summarizer.py --filter '{"from": "@school.org", "is_important": true, "is_unread": true}'
 ```
 
 ### 5. **Check for Attachments**
@@ -131,7 +131,7 @@ Permission slips, forms, and documents often have attachments:
 
 ```bash
 # Emails with attachments from school
-uv run email_summarizer.py --filter '{"from": "@school.org", "has_attachment": true, "newer_than": "14d"}'
+uv run scripts/email_summarizer.py --filter '{"from": "@school.org", "has_attachment": true, "newer_than": "14d"}'
 ```
 
 ### 6. **Use Full Message Body for Details**
@@ -140,7 +140,7 @@ When you need complete information (dates, times, requirements):
 
 ```bash
 # Get full details
-uv run email_summarizer.py --query "from:@school.org subject:conference" --full
+uv run scripts/email_summarizer.py --query "from:@school.org subject:conference" --full
 ```
 
 ### 7. **Limit Results for Quick Overview**
@@ -149,7 +149,7 @@ Start with fewer results to avoid overwhelming the user:
 
 ```bash
 # Just the 5 most recent
-uv run email_summarizer.py --query "from:@school.org is:unread" --max-results 5
+uv run scripts/email_summarizer.py --query "from:@school.org is:unread" --max-results 5
 ```
 
 ## Common School Email Searches
@@ -159,7 +159,7 @@ uv run email_summarizer.py --query "from:@school.org is:unread" --max-results 5
 Get this week's school emails:
 
 ```bash
-uv run email_summarizer.py --filter '{"from": "@SCHOOL-DOMAIN.org", "newer_than": "7d"}' --max-results 10
+uv run scripts/email_summarizer.py --filter '{"from": "@SCHOOL-DOMAIN.org", "newer_than": "7d"}' --max-results 10
 ```
 
 ### Monthly Comprehensive Review (Full Emails)
@@ -168,7 +168,7 @@ Get ALL full emails from a school for the past 28 days - useful for comprehensiv
 
 ```bash
 # Example: Get all full emails from CVCS for the last 28 days
-uv run email_summarizer.py --query "from:@cvcs.org smaller:5000K newer_than:28d" --full --max-results 100
+uv run scripts/email_summarizer.py --query "from:@cvcs.org smaller:5000K newer_than:28d" --full --max-results 100
 ```
 
 This example:
@@ -185,7 +185,7 @@ Perfect for getting a comprehensive view of all school communications for the mo
 Find emails with attachments that might be forms:
 
 ```bash
-uv run email_summarizer.py --query "from:@SCHOOL-DOMAIN.org subject:permission OR subject:form has:attachment newer_than:30d"
+uv run scripts/email_summarizer.py --query "from:@SCHOOL-DOMAIN.org subject:permission OR subject:form has:attachment newer_than:30d"
 ```
 
 ### Important Deadlines
@@ -193,7 +193,7 @@ uv run email_summarizer.py --query "from:@SCHOOL-DOMAIN.org subject:permission O
 Search for deadline-related keywords:
 
 ```bash
-uv run email_summarizer.py --query "from:@SCHOOL-DOMAIN.org subject:due OR subject:deadline is:important newer_than:14d"
+uv run scripts/email_summarizer.py --query "from:@SCHOOL-DOMAIN.org subject:due OR subject:deadline is:important newer_than:14d"
 ```
 
 ### Calendar Events
@@ -201,7 +201,7 @@ uv run email_summarizer.py --query "from:@SCHOOL-DOMAIN.org subject:due OR subje
 Find scheduled events and activities:
 
 ```bash
-uv run email_summarizer.py --query "from:@SCHOOL-DOMAIN.org subject:calendar OR subject:schedule OR subject:event newer_than:14d"
+uv run scripts/email_summarizer.py --query "from:@SCHOOL-DOMAIN.org subject:calendar OR subject:schedule OR subject:event newer_than:14d"
 ```
 
 ### Teacher Communications
@@ -209,7 +209,7 @@ uv run email_summarizer.py --query "from:@SCHOOL-DOMAIN.org subject:calendar OR 
 If you know the teacher's email:
 
 ```bash
-uv run email_summarizer.py --filter '{"from": "teacher@school.org", "newer_than": "7d"}'
+uv run scripts/email_summarizer.py --filter '{"from": "teacher@school.org", "newer_than": "7d"}'
 ```
 
 ### Emergency or Urgent Notifications
@@ -217,7 +217,7 @@ uv run email_summarizer.py --filter '{"from": "teacher@school.org", "newer_than"
 Find urgent communications:
 
 ```bash
-uv run email_summarizer.py --query "from:@SCHOOL-DOMAIN.org subject:urgent OR subject:important OR subject:emergency newer_than:7d"
+uv run scripts/email_summarizer.py --query "from:@SCHOOL-DOMAIN.org subject:urgent OR subject:important OR subject:emergency newer_than:7d"
 ```
 
 ## Example User Interaction
@@ -231,7 +231,7 @@ uv run email_summarizer.py --query "from:@SCHOOL-DOMAIN.org subject:urgent OR su
 **Assistant**: "Great! Let me search for recent emails from Lincoln Elementary..."
 
 ```bash
-uv run email_summarizer.py --filter '{"from": "@lincoln-k12.org", "newer_than": "14d"}' --max-results 10
+uv run scripts/email_summarizer.py --filter '{"from": "@lincoln-k12.org", "newer_than": "14d"}' --max-results 10
 ```
 
 **Assistant**: "I found 8 emails from Lincoln Elementary in the last 2 weeks:
@@ -276,7 +276,7 @@ Include these in subject/query searches:
 
 ```bash
 # Important unread emails with attachments from school
-uv run email_summarizer.py --filter '{
+uv run scripts/email_summarizer.py --filter '{
   "from": "@school.org",
   "is_important": true,
   "is_unread": true,
@@ -289,7 +289,7 @@ uv run email_summarizer.py --filter '{
 
 ```bash
 # Emails from specific date range
-uv run email_summarizer.py --filter '{
+uv run scripts/email_summarizer.py --filter '{
   "from": "@school.org",
   "after": "2024-10-01",
   "before": "2024-10-31"
@@ -300,7 +300,7 @@ uv run email_summarizer.py --filter '{
 
 ```bash
 # Export school communications to JSON
-uv run email_summarizer.py --filter '{"from": "@school.org", "newer_than": "30d"}' --output school_emails.json
+uv run scripts/email_summarizer.py --filter '{"from": "@school.org", "newer_than": "30d"}' --output school_emails.json
 ```
 
 ## Filter Options Reference
@@ -339,13 +339,13 @@ When using `--query` (Gmail syntax):
 
 Combine with spaces (AND) or `OR`:
 ```bash
-uv run email_summarizer.py --query "from:@school.org (subject:homework OR subject:assignment) newer_than:7d"
+uv run scripts/email_summarizer.py --query "from:@school.org (subject:homework OR subject:assignment) newer_than:7d"
 ```
 
 ## Command-Line Reference
 
 ```
-uv run email_summarizer.py [OPTIONS]
+uv run scripts/email_summarizer.py [OPTIONS]
 
 Required (one of):
   --query, -q QUERY         Gmail search query
@@ -380,7 +380,7 @@ Optional:
 Re-authenticate if needed:
 
 ```bash
-uv run email_summarizer_auth.py --force
+uv run scripts/email_summarizer_auth.py --force
 ```
 
 ## Tips for Maximum Efficiency
