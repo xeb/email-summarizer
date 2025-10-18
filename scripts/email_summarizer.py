@@ -11,7 +11,7 @@
 Standalone Gmail Email Summarizer Script
 
 This script provides a self-contained email summarization tool that can be run with:
-    uv run email_summarizer.py
+    uv run scripts/email_summarizer.py
 
 It includes two main functions:
 - search_by_query: Search emails using a Gmail search query
@@ -144,11 +144,11 @@ class EmailSummarizer:
                     os.chmod(self.token_file, 0o600)
                 except Exception as e:
                     print(f"Error refreshing credentials: {e}")
-                    print("Please run: uv run email_summarizer_auth.py")
+                    print("Please run: uv run scripts/email_summarizer_auth.py")
                     return False
             else:
                 print("No valid credentials found.")
-                print("Please run: uv run email_summarizer_auth.py")
+                print("Please run: uv run scripts/email_summarizer_auth.py")
                 return False
 
         # Build Gmail service

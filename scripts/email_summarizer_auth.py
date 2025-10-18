@@ -11,7 +11,7 @@
 Gmail Authentication Script for Email Summarizer
 
 This script handles OAuth2 authentication for Gmail API access.
-It can be run with: uv run email_summarizer_auth.py
+It can be run with: uv run scripts/email_summarizer_auth.py
 
 After successful authentication, it saves the token to token.json
 which can then be used by email_summarizer.py.
@@ -236,7 +236,7 @@ def authenticate(credentials_file: str = "credentials.json",
             print(f"\nAuthentication failed: {e}")
             if 'could not locate runnable browser' in str(e).lower():
                 print("\nNo browser available. Try using --headless flag:")
-                print("  uv run email_summarizer_auth.py --headless")
+                print("  uv run scripts/email_summarizer_auth.py --headless")
             return False
 
     # Save the credentials
@@ -345,7 +345,7 @@ Examples:
 
     if success:
         print("\nYou can now use email_summarizer.py:")
-        print("  uv run email_summarizer.py --query \"is:unread\"")
+        print("  uv run scripts/email_summarizer.py --query \"is:unread\"")
         print()
         return 0
     else:
